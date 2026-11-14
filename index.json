@@ -1,0 +1,44 @@
+{
+  "format": 1,
+  "title": {
+    "en": "p3l DSH plugins",
+    "zh": "p3l 的 DSH 插件"
+  },
+  "description": {
+    "en": "Plugins for DeepSeekRuntime, authored and maintained by p33333333333333l.",
+    "zh": "由 p33333333333333l 维护的 DeepSeekRuntime 插件。"
+  },
+  "plugins": [
+    {
+      "name": "dsh-mcp-command",
+      "title": {
+        "en": "MCP servers (/mcp)",
+        "zh": "MCP 服务器（/mcp）"
+      },
+      "description": {
+        "en": "Adds a /mcp command that opens a panel to view, add, edit and remove MCP servers without editing cordis.patch.yml by hand.",
+        "zh": "添加 /mcp 命令，弹出面板查看、新增、编辑和删除 MCP 服务器，不必手改 cordis.patch.yml。"
+      },
+      "author": "p33333333333333l",
+      "homepage": "https://github.com/p33333333333333l/dsh-mcp-command#readme",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/p33333333333333l/dsh-mcp-command"
+      },
+      "versions": [
+        {
+          "version": "1.0.0",
+          "publishTimestamp": 1794684774,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/p33333333333333l/dsh-mcp-command",
+            "commit": "7899553fa034ed11a2914d3d9fef2e60dcd7895d"
+          },
+          "engines": {
+            "dsh": ">=0.2.1-rc.1 <0.3.0"
+          }
+        }
+      ]
+    }
+  ]
+}
