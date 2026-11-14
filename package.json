@@ -1,0 +1,71 @@
+{
+  "name": "dsh-mcp-command",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Adds a /mcp command that opens a panel to view, add, edit and remove MCP servers.",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "./client/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "host/index.js",
+    "host/patch-doc.js",
+    "host/profile-patch.js",
+    "client/client.js",
+    "cordis.patch.yml",
+    "locale/en.json",
+    "locale/zh.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "assets/icon-180.png"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-commands",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "mcp",
+    "mcp-server",
+    "slash-command"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "dsh": ">=0.2.1-rc.1 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/p33333333333333l/dsh-mcp-command.git"
+  },
+  "homepage": "https://github.com/p33333333333333l/dsh-mcp-command#readme",
+  "bugs": {
+    "url": "https://github.com/p33333333333333l/dsh-mcp-command/issues"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-app-boot": ">=0.2.1-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-atomic-write": ">=0.2.1-rc.1 <0.3.0",
+    "yaml": "^2.9.1"
+  }
+}

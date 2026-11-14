@@ -1,0 +1,5 @@
+- insert:
+    - id: mcp-manager
+      name: 'dsh-mcp-command'
+      config:
+        manage: true

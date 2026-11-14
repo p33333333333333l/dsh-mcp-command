@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "MCP 管理器",
+    "description": "提供 /mcp 面板，可查看、新增、编辑和删除 MCP 服务器。"
+  }
+}
