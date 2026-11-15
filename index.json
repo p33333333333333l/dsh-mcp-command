@@ -27,12 +27,12 @@
       },
       "versions": [
         {
-          "version": "1.0.0",
-          "publishTimestamp": 1794720446,
+          "version": "0.1.0",
+          "publishTimestamp": 1794749874,
           "source": {
             "type": "git",
             "url": "https://github.com/p33333333333333l/dsh-mcp-command",
-            "commit": "90dab72104038f3e32d1a5a1c1a3743549a0bb54"
+            "commit": "7393c7d213f563bc443190b7496489fa073e2c01"
           },
           "engines": {
             "dsh": ">=0.2.1-rc.1 <0.3.0"
