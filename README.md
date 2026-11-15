@@ -4,6 +4,8 @@
 
 不用再手改 `cordis.patch.yml` 来增删 MCP 服务器。
 
+![在输入框输入 /mcp，命令列表中出现「MCP 服务器」](assets/screenshots/command-menu.png)
+
 ## 能做什么
 
 - **查看**：当前 profile 里配置的所有 MCP 服务器、连接方式（stdio / 远程 HTTP）、运行状态、已暴露给模型的工具名。

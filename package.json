@@ -20,7 +20,9 @@
     "icon.svg",
     "README.md",
     "LICENSE",
-    "assets/icon-180.png"
+    "assets/icon-180.png",
+    "screenshots.json",
+    "assets/screenshots/command-menu.png"
   ],
   "dsh": {
     "bundle": {
