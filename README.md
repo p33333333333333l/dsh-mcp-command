@@ -57,6 +57,16 @@ git+https://github.com/p33333333333333l/dsh-mcp-command.git
 
 工具在模型侧显示为 `mcp__<服务器名>__<工具名>`。
 
+### 用 `!!js` 引用环境变量
+
+环境变量和请求头的值可以写成 `!!js` 表达式，由 DSH 在加载时求值，密钥不落明文：
+
+```
+Authorization=!!js "Bearer " + process.env.MCP_TOKEN
+```
+
+面板会把已有的 `!!js` 表达式按这个形式显示，保存时原样写回配置；普通值不受影响。多行表达式的续行以一个制表符（Tab）开头，面板会自动添加这个标记，保存时去掉标记并保留原始换行。手动输入多行值时也使用相同格式。
+
 ## 改了什么文件
 
 写入落在当前 profile 的 `cordis.patch.yml`：新增和删除改动 `insert` 列表，编辑已有服务器只改该行的 `config`。注释、其它配置行和 `!!js` 表达式保持原样。
@@ -96,6 +106,15 @@ git+https://github.com/p33333333333333l/dsh-mcp-command.git
 
 - 面板管理的是**当前 profile** 的 MCP 行；其它 profile 需要各自安装本插件。
 - 不在 `insert` 列表里、而是以顶层 override 形式存在的 MCP 行，面板会显示但删除会拒绝，需要手工改配置。
+- 本插件运行在 profile 内，`@deepseek-ai/dsh-app-boot` 由宿主安装提供（不在本插件依赖里）。插件按 `profileContext.installAnchor` 从宿主解析它，这样才能和宿主共用同一个模块实例，Loader 的重新装配才能找到根 Include。
+
+## 开发
+
+```bash
+npm test          # node:test，覆盖 profile patch 的读写往返
+```
+
+测试全部离线：不读也不写任何真实 profile，只在内存里构造 YAML 文档。
 
 ## 结构
 

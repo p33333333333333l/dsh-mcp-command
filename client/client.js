@@ -58,9 +58,9 @@ window.__ModuleLoader__.load({
       'form.command': '命令',
       'form.args': '参数（每行一个）',
       'form.cwd': '工作目录（可选）',
-      'form.env': '环境变量（每行 KEY=VALUE）',
+      'form.env': '环境变量（每行 KEY=VALUE，值可写 !!js 表达式）',
       'form.url': '服务地址',
-      'form.headers': '请求头（每行 NAME=VALUE）',
+      'form.headers': '请求头（每行 NAME=VALUE，值可写 !!js 表达式）',
       'form.failOnStartup': '连接失败时阻止启动',
       'form.save': '保存',
       'form.cancel': '取消',
@@ -103,9 +103,9 @@ window.__ModuleLoader__.load({
       'form.command': 'Command',
       'form.args': 'Arguments (one per line)',
       'form.cwd': 'Working directory (optional)',
-      'form.env': 'Environment (KEY=VALUE per line)',
+      'form.env': 'Environment (KEY=VALUE per line; a value may be a !!js expression)',
       'form.url': 'Server URL',
-      'form.headers': 'Request headers (NAME=VALUE per line)',
+      'form.headers': 'Request headers (NAME=VALUE per line; a value may be a !!js expression)',
       'form.failOnStartup': 'Block startup when the connection fails',
       'form.save': 'Save',
       'form.cancel': 'Cancel',
@@ -250,23 +250,41 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       return h('style', { 'data-mcp-manager': '' }, CSS)
     }
 
-    /** Parse `KEY=VALUE` lines into a dictionary, ignoring blank lines. */
+    /**
+     * Parse `KEY=VALUE` lines into a dictionary, ignoring blank lines.
+     *
+     * The value is everything after the FIRST `=`, so a value that contains `=`
+     * (a query string, a base64 blob, `process.env.X !== '1'`) survives intact.
+     * A value the Host rendered as `!!js <expr>` comes back unchanged; the Host
+     * turns that prefix back into a Loader expression, so `!!js` headers and env
+     * values survive an edit instead of being saved as display text.
+     */
     function parsePairs(text) {
       const out = {}
+      let previousKey
       for (const line of String(text ?? '').split('\n')) {
+        // A tab marks a continuation, including lines with their own "=" or comments.
+        if (line.startsWith('\t') && previousKey !== undefined) {
+          out[previousKey] += `\n${line.slice(1)}`
+          continue
+        }
+        previousKey = undefined
         const trimmed = line.trim()
         if (trimmed === '' || !trimmed.includes('=')) continue
         const index = trimmed.indexOf('=')
         const key = trimmed.slice(0, index).trim()
         const value = trimmed.slice(index + 1).trim()
-        if (key !== '') out[key] = value
+        if (key !== '') {
+          out[key] = value
+          previousKey = key
+        }
       }
       return out
     }
 
-    /** Render a dictionary as `KEY=VALUE` lines. */
+    /** Render a dictionary as `KEY=VALUE` lines; values are already strings from the Host. */
     function formatPairs(dict) {
-      return Object.entries(dict ?? {}).map(([key, value]) => `${key}=${value}`).join('\n')
+      return Object.entries(dict ?? {}).map(([key, value]) => `${key}=${String(value).replace(/\n/g, '\n\t')}`).join('\n')
     }
 
     /** The command the panel edits, or an empty stdio draft. */

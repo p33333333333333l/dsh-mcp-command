@@ -24,6 +24,9 @@
     "screenshots.json",
     "assets/screenshots/command-menu.png"
   ],
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -66,7 +69,6 @@
     "url": "https://github.com/p33333333333333l/dsh-mcp-command/issues"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-app-boot": ">=0.2.1-rc.1 <0.3.0",
     "@deepseek-ai/dsh-atomic-write": ">=0.2.1-rc.1 <0.3.0",
     "yaml": "^2.9.1"
   }
