@@ -7,10 +7,10 @@
  * remove a server. Every mutation goes to the Host `mcpManager` service, which
  * writes the profile patch and lets the Loader reload the MCP client in place.
  *
- * @module dsh-mcp-command/client
+ * @module dsh-mcp-servers/client
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-mcp-command',
+  id: 'dsh-mcp-servers',
   factory(require) {
     const React = require('react')
     // `createPortal` lets the panel mount on `document.body`. Without it the

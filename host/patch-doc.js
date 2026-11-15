@@ -6,7 +6,7 @@
  * scalars intact. Keeping them free of Context lets the same code be tested
  * against a real patch file without a running profile.
  *
- * @module dsh-mcp-command/patch-doc
+ * @module dsh-mcp-servers/patch-doc
  */
 import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
 

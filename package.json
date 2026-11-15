@@ -1,5 +1,5 @@
 {
-  "name": "dsh-mcp-command",
+  "name": "dsh-mcp-servers",
   "version": "0.1.0",
   "type": "module",
   "description": "Adds a /mcp command that opens a panel to view, add, edit and remove MCP servers.",
@@ -59,11 +59,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/p33333333333333l/dsh-mcp-command.git"
+    "url": "git+https://github.com/p33333333333333l/dsh-mcp-servers.git"
   },
-  "homepage": "https://github.com/p33333333333333l/dsh-mcp-command#readme",
+  "homepage": "https://github.com/p33333333333333l/dsh-mcp-servers#readme",
   "bugs": {
-    "url": "https://github.com/p33333333333333l/dsh-mcp-command/issues"
+    "url": "https://github.com/p33333333333333l/dsh-mcp-servers/issues"
   },
   "dependencies": {
     "@deepseek-ai/dsh-app-boot": ">=0.2.1-rc.1 <0.3.0",

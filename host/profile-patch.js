@@ -9,7 +9,7 @@
  * `reconcileProfilePatches` recompose the Loader. A failed reconcile restores
  * the previous bytes.
  *
- * @module dsh-mcp-command
+ * @module dsh-mcp-servers
  */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'

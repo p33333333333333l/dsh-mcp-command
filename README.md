@@ -1,4 +1,4 @@
-# dsh-mcp-command
+# MCP 服务器
 
 给 DSH 加一个 `/mcp` 斜杠命令：输入即弹出面板，查看和管理 MCP 服务器。
 
@@ -17,10 +17,16 @@
 
 ## 安装
 
-在 DSH 里添加插件市场索引，或直接用插件管理器安装：
+在 DSH 里添加插件市场索引：
 
 ```
-git+https://github.com/p33333333333333l/dsh-mcp-command.git
+https://p33333333333333l.github.io/dsh-mcp-servers/index.json
+```
+
+或直接用插件管理器安装：
+
+```
+git+https://github.com/p33333333333333l/dsh-mcp-servers.git
 ```
 
 装好后重启或刷新页面，输入 `/mcp` 即可。
@@ -87,7 +93,7 @@ git+https://github.com/p33333333333333l/dsh-mcp-command.git
 ```yaml
 - insert:
     - id: mcp-manager
-      name: 'dsh-mcp-command'
+      name: 'dsh-mcp-servers'
       config:
         manage: true    # false 则面板只读
 ```

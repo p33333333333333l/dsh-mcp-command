@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "MCP Manager",
-    "description": "Opens a /mcp page that lists, adds, edits and removes MCP servers."
+    "title": "MCP Servers",
+    "description": "View, add, edit and remove MCP servers through the /mcp panel."
   }
 }

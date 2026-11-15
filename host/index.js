@@ -11,7 +11,7 @@
  * profile patch writer (row insert/remove), so every change takes the Loader's
  * normal reconcile path.
  *
- * @module dsh-mcp-command
+ * @module dsh-mcp-servers
  */
 import { createProfilePatchWriter } from './profile-patch.js'
 
