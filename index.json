@@ -10,20 +10,20 @@
   },
   "plugins": [
     {
-      "name": "dsh-mcp-command",
+      "name": "dsh-mcp-servers",
       "title": {
-        "en": "MCP servers (/mcp)",
-        "zh": "MCP 服务器（/mcp）"
+        "en": "MCP Servers",
+        "zh": "MCP 服务器"
       },
       "description": {
         "en": "Adds a /mcp command that opens a panel to view, add, edit and remove MCP servers without editing cordis.patch.yml by hand.",
         "zh": "添加 /mcp 命令，弹出面板查看、新增、编辑和删除 MCP 服务器，不必手改 cordis.patch.yml。"
       },
       "author": "p33333333333333l",
-      "homepage": "https://github.com/p33333333333333l/dsh-mcp-command#readme",
+      "homepage": "https://github.com/p33333333333333l/dsh-mcp-servers#readme",
       "repository": {
         "type": "git",
-        "url": "https://github.com/p33333333333333l/dsh-mcp-command"
+        "url": "https://github.com/p33333333333333l/dsh-mcp-servers"
       },
       "versions": [
         {
@@ -31,8 +31,8 @@
           "publishTimestamp": 1794749874,
           "source": {
             "type": "git",
-            "url": "https://github.com/p33333333333333l/dsh-mcp-command",
-            "commit": "7393c7d213f563bc443190b7496489fa073e2c01"
+            "url": "https://github.com/p33333333333333l/dsh-mcp-servers",
+            "commit": "b09457c3366305c94dee69412c1225acc7134f3a"
           },
           "engines": {
             "dsh": ">=0.2.1-rc.1 <0.3.0"
