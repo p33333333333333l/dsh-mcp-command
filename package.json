@@ -1,6 +1,6 @@
 {
   "name": "dsh-mcp-command",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Adds a /mcp command that opens a panel to view, add, edit and remove MCP servers.",
   "exports": {
