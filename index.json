@@ -28,11 +28,11 @@
       "versions": [
         {
           "version": "0.1.2",
-          "publishTimestamp": 1794815489,
+          "publishTimestamp": 1794816279,
           "source": {
             "type": "git",
             "url": "https://github.com/p33333333333333l/dsh-mcp-servers",
-            "commit": "47b3bb5ae1337b7b57fe70bddc0c5eec0f2b9ce8"
+            "commit": "654bb2d49b4e652f46ded8c9e2a3a369401f73e4"
           },
           "engines": {
             "dsh": ">=0.2.1-rc.1 <0.3.0"
