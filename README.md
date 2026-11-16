@@ -1,45 +1,59 @@
-# MCP 服务器
+# MCP Servers
 
-给 DSH 加一个 `/mcp` 斜杠命令：输入即弹出面板，查看和管理 MCP 服务器。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-不用再手改 `cordis.patch.yml` 来增删 MCP 服务器。
+Manage MCP servers in DSH with `/mcp`. View connection status and available tools, import configurations, and add, edit or remove local stdio and remote HTTP servers.
 
-![在输入框输入 /mcp，命令列表中出现「MCP 服务器」](assets/screenshots/command-menu.png)
+![MCP Servers in the /mcp command menu](assets/screenshots/command-menu.png)
 
-## 能做什么
+## Install
 
-- **查看**：当前 profile 里配置的所有 MCP 服务器、连接方式（stdio / 远程 HTTP）、运行状态、已暴露给模型的工具名。
-- **导入**：粘贴或选择 JSON 文件，预览后整批添加服务器；重名时不会覆盖。
-- **新增**：填写服务器名、连接方式、命令或地址，保存后立刻写入 profile 配置并重载 MCP 客户端。
-- **编辑**：修改已有服务器的命令、参数、环境变量、地址、请求头。
-- **删除**：从 profile 配置里移除整个服务器。
-
-命令在菜单里显示为「MCP 服务器」，带独立图标；按钮文字跟随界面语言（中文 / English）。
-
-## 安装
-
-在 DSH 里添加插件市场索引：
+Add this plugin market index in DSH, then install **MCP Servers**:
 
 ```
 https://p33333333333333l.github.io/dsh-mcp-servers/index.json
 ```
 
-或直接用插件管理器安装：
+Or install directly through the plugin manager:
 
 ```
 git+https://github.com/p33333333333333l/dsh-mcp-servers.git
 ```
 
-装好后重启或刷新页面，输入 `/mcp` 即可。
+Restart DSH or refresh the page after installation.
 
-## 怎么用
+## Use
 
-1. 在对话输入框输入 `/mcp`，从命令列表里选「MCP 服务器」；或直接输入 `/mcp` 回车。
-2. 面板弹出，列出所有服务器。名称前的状态灯：绿色运行中，黄色等待中，红色加载失败，灰色已禁用或未运行；悬停可查看状态说明。
-3. 点「添加服务器」或「编辑」进入独立表单，桌面端双列排列；点「删除」移除服务器。
-4. 点「导入」，粘贴配置或选择 JSON 文件，预览后确认导入。
+Enter `/mcp` in the conversation input and select **MCP Servers**, or press Enter. The panel follows your interface language (English or Chinese).
 
-导入支持 `mcpServers` JSON 和以服务器名为键的配置对象，可一次添加多个本地 stdio 或远程 HTTP 服务器。示例：
+- Add or edit a server in the form, or delete it after confirmation.
+- Import servers by pasting JSON or choosing a file, then reviewing the preview.
+- Check the status dot beside each name: green means running, yellow means pending, red means failed, and gray means disabled or inactive. Hover for details.
+
+Press `Esc` or enter `/mcp` again to close the panel.
+
+## Server settings
+
+Server names allow letters, numbers, underscores and hyphens, up to 32 characters. Tools appear to the model as `mcp__<server-name>__<tool-name>`.
+
+| Connection | Settings |
+| --- | --- |
+| Local process (stdio) | Command such as `npx` or `/usr/bin/node`; one argument per line; optional working directory; environment variables as `KEY=VALUE`, one per line |
+| Remote HTTP | Server URL such as `https://example.com/mcp`; optional headers as `NAME=VALUE`, one per line |
+
+**Block startup when the connection fails** makes the MCP client fail to activate if it cannot connect.
+
+Environment variables and headers can reference environment values with `!!js`:
+
+```
+Authorization=!!js "Bearer " + process.env.MCP_TOKEN
+```
+
+DSH evaluates the expression when loading the configuration. Existing expressions are preserved when edited. For multiline values, start each continuation line with a Tab; the panel adds this marker when displaying existing values.
+
+## Import
+
+Accepts a `mcpServers` object or a plain object keyed by server name:
 
 ```json
 {
@@ -50,104 +64,28 @@ git+https://github.com/p33333333333333l/dsh-mcp-servers.git
 }
 ```
 
-本地服务器支持 `command`、`args`、`env`、`cwd`；远程服务器支持 `url`、`headers`，`type` 可省略，也可写 `"http"` 或 `"streamable-http"`。遇到重名、格式错误或不支持的字段（如 SSE、`disabled`）时，整批不写入；写入或重载失败会回滚。导入 JSON 中的环境变量和请求头按字符串保留，未修改的 `!!js` 文本在后续编辑保存时也不会转为表达式；字典中的保留键 `__jsExpr` 不支持导入。
+Local servers support `command`, `args`, `env` and `cwd`. Remote servers support `url` and `headers`; `type` may be omitted or set to `"http"` or `"streamable-http"`.
 
-再次输入 `/mcp` 或按 `Esc` 关闭面板。
+Duplicate names, invalid data or unsupported fields (including SSE and `disabled`) reject the whole batch without overwriting existing servers. Failed writes or reloads roll back the batch.
 
-## 服务器配置填什么
+Imported environment variables and headers stay literal strings, including unchanged `!!js` text on later edits. The reserved dictionary key `__jsExpr` is not accepted.
 
-**本地进程（stdio）**
+## Configuration changes and limits
 
-| 字段 | 说明 |
-|---|---|
-| 服务器名 | 工具前缀，只能字母数字下划线连字符，最长 32 字符 |
-| 命令 | 可执行文件路径，例如 `/usr/bin/node` 或 `npx` |
-| 参数 | 每行一个 |
-| 工作目录 | 可选 |
-| 环境变量 | 每行 `KEY=VALUE` |
-
-**远程 HTTP**
-
-| 字段 | 说明 |
-|---|---|
-| 服务器名 | 同上 |
-| 服务地址 | 例如 `https://example.com/mcp` |
-| 请求头 | 每行 `NAME=VALUE`，可用于 `Authorization` |
-
-「连接失败时阻止启动」勾选后，服务器连不上会导致该插件激活失败。
-
-工具在模型侧显示为 `mcp__<服务器名>__<工具名>`。
-
-### 用 `!!js` 引用环境变量
-
-环境变量和请求头的值可以写成 `!!js` 表达式，由 DSH 在加载时求值，密钥不落明文：
-
-```
-Authorization=!!js "Bearer " + process.env.MCP_TOKEN
-```
-
-面板会把已有的 `!!js` 表达式按这个形式显示，保存时原样写回配置；普通值不受影响。多行表达式的续行以一个制表符（Tab）开头，面板会自动添加这个标记，保存时去掉标记并保留原始换行。手动输入多行值时也使用相同格式。
-
-## 改了什么文件
-
-写入落在当前 profile 的 `cordis.patch.yml`：新增和删除改动 `insert` 列表，编辑已有服务器只改该行的 `config`。注释、其它配置行和 `!!js` 表达式保持原样。
-
-## 它会写你的配置
-
-这是会修改 DSH 配置文件的插件，每次保存或删除都会改写 `cordis.patch.yml`。
-
-- **先备份**：第一次使用前，把 `~/.dsh/profiles/<profile>/cordis.patch.yml` 复制一份。
-- **删除会连带移除工具**：删掉一个服务器，它提供给模型的全部工具会立即消失。面板会要求二次确认。
-- **保存会重连**：改动后 MCP 客户端重新加载，正在进行的工具调用可能中断。
-
-保护措施：
-
-- 写入前校验服务器名格式和必填字段，非法输入不会落盘。
-- 写入加文件锁，避免并发写坏文件。
-- 写入后若 Loader 重新装配失败，自动回滚到改动前的字节。
-
-## 安全性
-
-- 面板只能通过已认证的浏览器会话访问（走 DSH 自己的 Connection 通道）。
-- 插件配置里 `manage: false` 可把它变成只读。
-
-## 配置
-
-`cordis.patch.yml` 里的插件行可加 `config`：
+- The panel manages the current DSH profile. Install the plugin separately in each profile you use.
+- Changes update that profile's `cordis.patch.yml`. Back up `~/.dsh/profiles/<profile>/cordis.patch.yml` before first use.
+- Saving reconnects the MCP client and may interrupt active tool calls. Deleting a server removes all its tools.
+- Servers defined as top-level overrides rather than in an `insert` list can be viewed, but must be removed manually.
+- The panel uses your authenticated DSH session. Set `manage: false` in the plugin configuration for read-only access:
 
 ```yaml
 - insert:
     - id: mcp-manager
       name: 'dsh-mcp-servers'
       config:
-        manage: true    # false 则面板只读
+        manage: false
 ```
 
-## 已知限制
-
-- 面板管理的是**当前 profile** 的 MCP 行；其它 profile 需要各自安装本插件。
-- 不在 `insert` 列表里、而是以顶层 override 形式存在的 MCP 行，面板会显示但删除会拒绝，需要手工改配置。
-- 本插件运行在 profile 内，`@deepseek-ai/dsh-app-boot` 由宿主安装提供（不在本插件依赖里）。插件按 `profileContext.installAnchor` 从宿主解析它，这样才能和宿主共用同一个模块实例，Loader 的重新装配才能找到根 Include。
-
-## 开发
-
-```bash
-npm test          # node:test，覆盖 profile patch 的读写往返
-```
-
-测试全部离线：不读也不写任何真实 profile，只在内存里构造 YAML 文档。
-
-## 结构
-
-```
-host/index.js           Host 半：RPC 路由、McpManager（列表/保存/删除/校验）
-host/patch-doc.js       profile patch 的纯文档编辑（保留注释与 !!js）
-host/profile-patch.js   加锁写入 + Loader 重新装配，失败回滚
-client/client.js        浏览器半：/mcp 命令、面板、图标、中英文字典
-cordis.patch.yml        bundle patch：插入插件行
-locale/{en,zh}.json     插件管理器显示的标题与描述
-```
-
-## 协议
+## License
 
 [Apache License 2.0](LICENSE)

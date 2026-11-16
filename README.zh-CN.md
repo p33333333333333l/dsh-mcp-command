@@ -1,0 +1,91 @@
+# MCP 服务器
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+在 DSH 中通过 `/mcp` 管理 MCP 服务器：查看连接状态和可用工具，导入配置，添加、编辑或删除本地 stdio 与远程 HTTP 服务器。
+
+![在 /mcp 命令菜单中打开 MCP 服务器](assets/screenshots/command-menu.png)
+
+## 安装
+
+在 DSH 中添加以下插件市场索引，再安装「MCP 服务器」：
+
+```
+https://p33333333333333l.github.io/dsh-mcp-servers/index.json
+```
+
+也可以通过插件管理器直接安装：
+
+```
+git+https://github.com/p33333333333333l/dsh-mcp-servers.git
+```
+
+安装后重启 DSH 或刷新页面。
+
+## 使用
+
+在对话输入框输入 `/mcp`，选择「MCP 服务器」或直接回车。面板语言跟随界面设置，支持中文和英文。
+
+- 添加或编辑服务器时填写表单；删除前需确认。
+- 导入时粘贴 JSON 或选择文件，预览后确认。
+- 名称前的状态灯：绿色运行中，黄色等待中，红色失败，灰色已禁用或未运行。悬停可查看说明。
+
+按 `Esc` 或再次输入 `/mcp` 关闭面板。
+
+## 服务器设置
+
+服务器名只能使用字母、数字、下划线和连字符，最长 32 字符。工具在模型侧显示为 `mcp__<服务器名>__<工具名>`。
+
+| 连接方式 | 填写内容 |
+| --- | --- |
+| 本地进程（stdio） | 命令，如 `npx` 或 `/usr/bin/node`；参数每行一个；工作目录可选；环境变量每行 `KEY=VALUE` |
+| 远程 HTTP | 服务地址，如 `https://example.com/mcp`；请求头可选，每行 `NAME=VALUE` |
+
+勾选「连接失败时阻止启动」后，无法连接会导致 MCP 客户端激活失败。
+
+环境变量和请求头可以用 `!!js` 引用环境中的值：
+
+```
+Authorization=!!js "Bearer " + process.env.MCP_TOKEN
+```
+
+DSH 在加载配置时求值，已有表达式在编辑时保留。多行值的续行以一个 Tab 开头；面板显示已有值时会自动添加这个标记。
+
+## 导入
+
+支持 `mcpServers` 对象，也支持直接以服务器名为键的对象：
+
+```json
+{
+  "mcpServers": {
+    "local": { "command": "npx", "args": ["-y", "example-mcp"] },
+    "remote": { "type": "http", "url": "https://example.com/mcp" }
+  }
+}
+```
+
+本地服务器支持 `command`、`args`、`env`、`cwd`。远程服务器支持 `url`、`headers`；`type` 可省略，也可设为 `"http"` 或 `"streamable-http"`。
+
+遇到重名、格式错误或不支持的字段（包括 SSE、`disabled`）时，整批不写入，也不会覆盖已有服务器。写入或重载失败会整批回滚。
+
+导入的环境变量和请求头保留为普通字符串，包括后续编辑时未修改的 `!!js` 文本。字典中的保留键 `__jsExpr` 不支持导入。
+
+## 配置变更与限制
+
+- 面板只管理当前 DSH profile；其他 profile 需分别安装。
+- 改动写入该 profile 的 `cordis.patch.yml`。首次使用前，请备份 `~/.dsh/profiles/<profile>/cordis.patch.yml`。
+- 保存会重连 MCP 客户端，可能中断正在进行的工具调用。删除服务器会移除它提供的全部工具。
+- 以顶层 override 定义、未放在 `insert` 列表中的服务器可以查看，但需手动删除。
+- 面板使用已认证的 DSH 会话。需要只读模式时，在插件配置中设置 `manage: false`：
+
+```yaml
+- insert:
+    - id: mcp-manager
+      name: 'dsh-mcp-servers'
+      config:
+        manage: false
+```
+
+## 协议
+
+[Apache License 2.0](LICENSE)
