@@ -16,6 +16,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { isMap, visit } from 'yaml'
 import { insertRow, parsePatch, removeRow, serializePatch } from './patch-doc.js'
 
 /** Bin name the profile helpers expect. */
@@ -63,7 +64,7 @@ async function appBoot(installAnchor) {
 /**
  * Build the patch writer.
  * @param {import('@deepseek-ai/cordis').Context} ctx Plugin context that owns the profile.
- * @returns {{ insert: (row: object) => Promise<void>, remove: (row: object) => Promise<void> }}
+ * @returns {{ insert: (row: object) => Promise<void>, insertMany: (rows: object[]) => Promise<void>, remove: (row: object) => Promise<void> }}
  */
 function createProfilePatchWriter(ctx) {
   const profile = ctx.profileContext
@@ -123,6 +124,30 @@ function createProfilePatchWriter(ctx) {
       return exclusive((document) => {
         insertRow(document, row)
         return [row.id]
+      })
+    },
+    /** Append a whole batch, checking names again after entering the lock. */
+    insertMany(rows) {
+      return exclusive((document) => {
+        const names = new Set()
+        for (const entry of ctx.loader.entries()) {
+          if (entry.options.name === rows[0]?.name) names.add(entry.options.config?.serverName)
+        }
+        // Include rows written by another process that this Loader has not seen yet.
+        visit(document, {
+          Map(_key, node) {
+            if (node.get('name') !== rows[0]?.name) return
+            const config = node.get('config', true)
+            if (isMap(config)) names.add(config.get('serverName'))
+          },
+        })
+        for (const row of rows) {
+          const name = row.config.serverName
+          if (names.has(name)) throw Object.assign(new Error(`MCP server "${name}" already exists`), { code: 'invalid' })
+          names.add(name)
+        }
+        for (const row of rows) insertRow(document, row)
+        return rows.map((row) => row.id)
       })
     },
     /** Remove one plugin row from the profile patch. */

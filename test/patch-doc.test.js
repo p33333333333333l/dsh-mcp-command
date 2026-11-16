@@ -345,6 +345,19 @@ test('an empty expression is dropped rather than saved', () => {
   assert.deepEqual(config.headers, { B: 'keep' })
 })
 
+test('expression values named env or headers still serialize as expressions', () => {
+  const document = parsePatch('')
+  insertRow(document, {
+    id: 'expression-keys', name: MCP_CLIENT,
+    config: { serverName: 'expression-keys', transport: 'streamable-http', url: 'https://e', headers: {
+      env: { __jsExpr: 'process.env.A' }, headers: { __jsExpr: 'process.env.B' },
+    } },
+  })
+  assert.deepEqual(inserted(readBack(serializePatch(document)))[0].config.headers, {
+    env: { __jsExpr: 'process.env.A' }, headers: { __jsExpr: 'process.env.B' },
+  })
+})
+
 test('blank dictionary entries are dropped', () => {
   const manager = new McpManager(CTX, {})
   const config = manager.configFor(

@@ -14,6 +14,7 @@
  * @module dsh-mcp-servers
  */
 import { isDeepStrictEqual } from 'node:util'
+import { parseDocument } from 'yaml'
 import { createProfilePatchWriter } from './profile-patch.js'
 
 /** Module name of one MCP server row. */
@@ -63,11 +64,20 @@ function restoreValue(text) {
 }
 
 /** Trim a dictionary, dropping blank keys and values. */
-function cleanDict(input) {
+function cleanDict(input, previous = {}) {
   const out = {}
   if (input !== null && typeof input === 'object') {
     for (const [key, value] of Object.entries(input)) {
       const name = String(key).trim()
+      // The panel trims pair lines. Keep matching raw literals (including !!js)
+      // rather than interpreting imported text when an unrelated field is edited.
+      const literal = Object.entries(previous ?? {}).find(([oldKey, oldValue]) =>
+        oldKey.trim() === name && typeof oldValue === 'string' &&
+        typeof value === 'string' && oldValue.trim() === value.trim())
+      if (name !== '' && literal !== undefined) {
+        out[literal[0]] = literal[1]
+        continue
+      }
       // A caller that posts the marker object directly keeps it; the panel posts
       // the `!!js <expr>` text form, which `restoreValue` turns back into one.
       const kept = isJsExpr(value) ? value : restoreValue(String(value ?? '').trim())
@@ -105,6 +115,50 @@ class McpError extends Error {
   }
 }
 
+/** Strict JSON import; deliberately bypasses the panel's coercion and !!js handling. */
+function parseImport(text) {
+  if (typeof text !== 'string') throw new McpError('invalid', 'import text must be a JSON string')
+  if (Buffer.byteLength(text, 'utf8') > 1024 * 1024) throw new McpError('invalid', 'import JSON must be 1 MiB or smaller')
+  let input
+  try {
+    input = JSON.parse(text)
+  } catch {
+    throw new McpError('invalid', 'import text is not JSON')
+  }
+  // JSON.parse keeps only the last duplicate; inspect keys before accepting that loss.
+  if (parseDocument(text).errors.some((error) => error.code === 'DUPLICATE_KEY')) {
+    throw new McpError('invalid', 'import JSON contains duplicate keys')
+  }
+  const plain = (value) => value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype
+  const invalid = (message) => { throw new McpError('invalid', message) }
+  if (!plain(input)) invalid('import must be an object')
+  if (Object.hasOwn(input, 'mcpServers')) {
+    if (Object.keys(input).length !== 1) invalid('only mcpServers is supported at the import root')
+    input = input.mcpServers
+  }
+  if (!plain(input) || Object.keys(input).length === 0) invalid('mcpServers must be a nonempty object')
+  return Object.entries(input).map(([serverName, server]) => {
+    if (!SERVER_NAME.test(serverName)) invalid(`invalid server name "${serverName}"; use 1-32 characters of A-Z a-z 0-9 _ -`)
+    if (!plain(server)) invalid(`server "${serverName}" must be an object`)
+    const type = Object.hasOwn(server, 'type') ? server.type : (Object.hasOwn(server, 'url') ? 'http' : 'stdio')
+    if (!['stdio', 'http', 'streamable-http'].includes(type)) invalid(`unsupported transport for "${serverName}"`)
+    const stdio = type === 'stdio'
+    const allowed = stdio ? ['type', 'command', 'args', 'env', 'cwd'] : ['type', 'url', 'headers']
+    for (const key of Object.keys(server)) {
+      if (!allowed.includes(key)) invalid(`unsupported field "${key}" for "${serverName}"`)
+    }
+    const required = stdio ? 'command' : 'url'
+    if (typeof server[required] !== 'string' || server[required].trim() === '') invalid(`"${serverName}" needs a nonempty ${required} string`)
+    if (Object.hasOwn(server, 'cwd') && typeof server.cwd !== 'string') invalid(`cwd for "${serverName}" must be a string`)
+    if (Object.hasOwn(server, 'args') && (!Array.isArray(server.args) || server.args.some((arg) => typeof arg !== 'string'))) invalid(`args for "${serverName}" must be an array of strings`)
+    const dictionary = stdio ? 'env' : 'headers'
+    if (Object.hasOwn(server, dictionary) && (!plain(server[dictionary]) || Object.values(server[dictionary]).some((value) => typeof value !== 'string'))) invalid(`${dictionary} for "${serverName}" must be an object of strings`)
+    if (Object.hasOwn(server[dictionary] ?? {}, '__jsExpr')) invalid(`reserved key "__jsExpr" in ${dictionary} for "${serverName}"`)
+    const { type: _type, ...fields } = server
+    return { serverName, transport: stdio ? 'stdio' : 'streamable-http', ...(stdio ? { args: [] } : {}), ...fields }
+  })
+}
+
 /** Cordis fiber states, mirroring the Loader's numeric codes. */
 const FIBER_PHASE = ['pending', 'loading', 'active', 'failed', null, 'unloading']
 
@@ -120,7 +174,7 @@ class McpManager {
   /**
    * @param {import('@deepseek-ai/cordis').Context} ctx Owning plugin context.
    * @param {{ manage?: boolean }} [config] Resolved plugin config.
-   * @param {{ insert: (row: object) => Promise<void>, remove: (row: object) => Promise<void> }} [patches] Profile patch writer.
+   * @param {{ insert: (row: object) => Promise<void>, insertMany: (rows: object[]) => Promise<void>, remove: (row: object) => Promise<void> }} [patches] Profile patch writer.
    */
   constructor(ctx, config = {}, patches) {
     this.ctx = ctx
@@ -164,6 +218,34 @@ class McpManager {
     const rowId = this.freeRowId(`mcp-${draft.serverName}`)
     await this.patches().insert({ id: rowId, name: MCP_CLIENT, config })
     return { rowId, created: true }
+  }
+
+  /** Validate an import without writing or evaluating any imported strings. */
+  previewImport(text) {
+    this.requireManage()
+    const servers = parseImport(text)
+    for (const server of servers) {
+      if (this.rowNamed(server.serverName) !== undefined) throw new McpError('invalid', `MCP server "${server.serverName}" already exists`)
+    }
+    return { servers }
+  }
+
+  /** Revalidate the whole batch and commit it in one profile transaction. */
+  async importServers(text) {
+    const { servers } = this.previewImport(text)
+    const taken = new Set([...this.ctx.loader.entries()].map((entry) => entry.options.id))
+    const rows = servers.map((config) => {
+      const id = this.freeRowId(`mcp-${config.serverName}`, taken)
+      taken.add(id)
+      return { id, name: MCP_CLIENT, config }
+    })
+    try {
+      await this.patches().insertMany(rows)
+    } catch (error) {
+      if (error.code === 'invalid') throw new McpError('invalid', error.message)
+      throw error
+    }
+    return { imported: rows.length }
   }
 
   /**
@@ -248,11 +330,11 @@ class McpManager {
       config.args = cleanList(server.args)
       const cwd = String(server.cwd ?? '').trim()
       if (cwd !== '') config.cwd = cwd
-      const env = cleanDict(server.env)
+      const env = cleanDict(server.env, previous.env)
       if (Object.keys(env).length > 0) config.env = env
     } else {
       config.url = String(server.url).trim()
-      const headers = cleanDict(server.headers)
+      const headers = cleanDict(server.headers, previous.headers)
       if (Object.keys(headers).length > 0) config.headers = headers
     }
     return config
@@ -269,8 +351,7 @@ class McpManager {
   }
 
   /** A row id no other Loader entry uses. */
-  freeRowId(base) {
-    const taken = new Set([...this.ctx.loader.entries()].map((entry) => entry.options.id))
+  freeRowId(base, taken = new Set([...this.ctx.loader.entries()].map((entry) => entry.options.id))) {
     if (!taken.has(base)) return base
     for (let index = 2; index < 100; index += 1) {
       const candidate = `${base}-${index}`
@@ -298,6 +379,10 @@ async function handle(manager, payload) {
   switch (body.action) {
     case 'list':
       return manager.list()
+    case 'previewImport':
+      return manager.previewImport(body.text)
+    case 'import':
+      return manager.importServers(body.text)
     case 'save':
       return manager.save(body.server)
     case 'remove':

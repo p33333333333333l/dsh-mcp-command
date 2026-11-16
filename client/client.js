@@ -28,10 +28,20 @@ window.__ModuleLoader__.load({
       'command.mcp.description': '查看和管理 MCP 服务器',
       'panel.aria': 'MCP 服务器',
       'panel.title': 'MCP 服务器',
-      'panel.subtitle': '这些服务器由当前 profile 的 cordis.patch.yml 配置，改动会立即重载 MCP 客户端。',
       'panel.refresh': '刷新',
       'panel.close': '关闭',
       'panel.add': '添加服务器',
+      'import.title': '导入',
+      'import.source': 'JSON 配置',
+      'import.file': '选择 JSON 文件',
+      'import.hint': '粘贴 mcpServers 配置，或选择 JSON 文件。重名服务器不会被覆盖。',
+      'import.preview': '预览',
+      'import.confirm': '确认导入',
+      'import.busy': '处理中…',
+      'import.ready': '待导入服务器：',
+      'import.done': '已导入服务器：',
+      'import.tooLarge': '配置不能超过 1 MiB。',
+      'import.readFailed': '无法读取文件。',
       'panel.empty': '还没有配置 MCP 服务器。',
       'panel.loading': '正在读取配置…',
       'panel.failed': '读取失败',
@@ -50,8 +60,8 @@ window.__ModuleLoader__.load({
       'row.no': '取消',
       'form.addTitle': '添加 MCP 服务器',
       'form.editTitle': '编辑 MCP 服务器',
-      'form.name': '服务器名（工具前缀）',
-      'form.nameHint': '只能包含字母、数字、下划线和连字符，最长 32 个字符。工具名形如 mcp__<名称>__<工具>。',
+      'form.name': '服务器名',
+      'form.nameHint': '字母、数字、下划线或连字符，最多 32 个字符。',
       'form.transport': '连接方式',
       'form.stdio': '本地进程 (stdio)',
       'form.http': '远程 HTTP',
@@ -73,10 +83,20 @@ window.__ModuleLoader__.load({
       'command.mcp.description': 'View and manage MCP servers',
       'panel.aria': 'MCP servers',
       'panel.title': 'MCP servers',
-      'panel.subtitle': 'These servers come from this profile\'s cordis.patch.yml; every change reloads the MCP client in place.',
       'panel.refresh': 'Refresh',
       'panel.close': 'Close',
       'panel.add': 'Add server',
+      'import.title': 'Import',
+      'import.source': 'JSON configuration',
+      'import.file': 'Choose JSON file',
+      'import.hint': 'Paste mcpServers JSON or choose a file. Existing servers are never overwritten.',
+      'import.preview': 'Preview',
+      'import.confirm': 'Confirm import',
+      'import.busy': 'Working…',
+      'import.ready': 'Servers to import: ',
+      'import.done': 'Servers imported: ',
+      'import.tooLarge': 'Configuration must be 1 MiB or smaller.',
+      'import.readFailed': 'Could not read the file.',
       'panel.empty': 'No MCP server is configured yet.',
       'panel.loading': 'Reading configuration…',
       'panel.failed': 'Could not read the configuration',
@@ -95,8 +115,8 @@ window.__ModuleLoader__.load({
       'row.no': 'Cancel',
       'form.addTitle': 'Add an MCP server',
       'form.editTitle': 'Edit MCP server',
-      'form.name': 'Server name (tool prefix)',
-      'form.nameHint': 'Letters, digits, underscore and hyphen, at most 32 characters. Tools appear as mcp__<name>__<tool>.',
+      'form.name': 'Server name',
+      'form.nameHint': 'Letters, digits, underscores or hyphens; up to 32 characters.',
       'form.transport': 'Connection',
       'form.stdio': 'Local process (stdio)',
       'form.http': 'Remote HTTP',
@@ -154,8 +174,9 @@ window.__ModuleLoader__.load({
 /* Sits above every shipped layer (dialogs use 1000, small panels 1250);
    2000 keeps this modal on top even after a future panel raises its value. */
 .mcp-backdrop{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;
-  background:var(--dsw-alias-bg-mask-1);padding:24px}
-.mcp-panel{display:flex;flex-direction:column;width:min(760px,100%);max-height:min(640px,100%);
+  background:var(--dsw-alias-bg-mask-1);padding:24px;box-sizing:border-box}
+.mcp-panel{display:flex;flex-direction:column;width:min(1040px,100%);max-height:calc(100dvh - 48px);
+  box-sizing:border-box;min-width:0;
   background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
   border:1px solid var(--dsw-alias-border-l2);border-radius:14px;
   box-shadow:var(--dsw-elevation-prominent);overflow:hidden;
@@ -195,15 +216,15 @@ body:not([data-ds-dark-theme]) .mcp-btn-primary{background:var(--dsw-static-deep
 .mcp-card{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;
   padding:10px 12px;margin:0 0 10px;background:var(--dsw-alias-bg-layer-2)}
 .mcp-card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.mcp-name{font-weight:600;font-size:13px;color:var(--dsw-alias-label-primary)}
+.mcp-name{display:inline-flex;align-items:center;gap:8px;min-width:0;
+  font-weight:600;font-size:13px;color:var(--dsw-alias-label-primary)}
+.mcp-status{display:inline-block;width:8px;height:8px;flex-shrink:0;border-radius:50%;
+  background:var(--dsw-alias-state-idle-primary)}
+.mcp-status-active{background:var(--dsw-alias-state-success-primary)}
+.mcp-status-pending{background:var(--dsw-alias-state-warn-primary)}
+.mcp-status-failed{background:var(--dsw-alias-state-error-primary)}
 .mcp-tag{font-size:11px;padding:1px 7px;border-radius:999px;
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
-.mcp-tag-ok{background:var(--dsw-alias-bg-layer-2);
-  color:var(--dsw-alias-state-success-primary)}
-/* 主题的成功色在浅色背景上偏亮，浅色主题下改用更深的绿保证可读。 */
-body:not([data-ds-dark-theme]) .mcp-tag-ok{color:var(--dsw-static-green-900)}
-.mcp-tag-bad{background:var(--dsw-alias-bg-layer-2);
-  color:var(--dsw-alias-state-error-primary)}
 .mcp-actions{margin-left:auto;display:flex;gap:6px}
 .mcp-line{margin:6px 0 0;font-size:12px;color:var(--dsw-alias-label-secondary);
   font-family:var(--dsw-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
@@ -213,7 +234,7 @@ body:not([data-ds-dark-theme]) .mcp-tag-ok{color:var(--dsw-static-green-900)}
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);
   font-family:var(--dsw-font-mono,ui-monospace,monospace)}
 .mcp-form{display:grid;gap:10px}
-.mcp-field{display:grid;gap:4px}
+.mcp-field{display:grid;gap:4px;min-width:0;align-content:start}
 .mcp-field span{font-size:12px;color:var(--dsw-alias-label-secondary)}
 .mcp-field small{font-size:11px;color:var(--dsw-alias-label-tertiary)}
 .mcp-field input[type=text],.mcp-field textarea,.mcp-field select{
@@ -243,6 +264,15 @@ body:not([data-ds-dark-theme]) .mcp-tag-ok{color:var(--dsw-static-green-900)}
 .mcp-seg button[aria-pressed=true]{background:var(--dsw-alias-button-info-fill);
   color:var(--dsw-alias-label-primary-foreground)}
 body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var(--dsw-static-deepseek-600)}
+@media (min-width:720px){
+  .mcp-server-form{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;column-gap:18px}
+  .mcp-server-form>.mcp-card-top,.mcp-server-form>.mcp-check,
+  .mcp-server-form>.mcp-note,.mcp-server-form>.mcp-form-actions{grid-column:1/-1}
+}
+@media (max-width:719px){
+  .mcp-backdrop{padding:12px}
+  .mcp-panel{max-height:calc(100dvh - 24px)}
+}
 `
 
     /** Render the panel styles once per mounted panel; unmounting removes them. */
@@ -317,14 +347,15 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
     /** One server row with its edit/remove actions. */
     function ServerCard({ server, t, readOnly, removing, onEdit, onRemove }) {
       const [confirming, setConfirming] = useState(false)
-      const phase = String(server.phase ?? '')
-      const running = server.enabled && phase !== 'failed'
-      const phaseText = phase === 'active' ? t('row.phase.active') : phase === 'failed' ? t('row.phase.failed') : phase === 'pending' ? t('row.phase.pending') : t('row.phase.other')
+      const phase = server.enabled ? String(server.phase ?? '') : 'disabled'
+      const status = ['active', 'failed', 'pending'].includes(phase) ? phase : 'idle'
+      const phaseText = t(phase === 'disabled' ? 'row.disabled' : `row.phase.${status === 'idle' ? 'other' : status}`)
       return h('div', { className: 'mcp-card' },
         h('div', { className: 'mcp-card-top' },
-          h('span', { className: 'mcp-name' }, server.serverName),
+          h('span', { className: 'mcp-name' },
+            h('span', { className: `mcp-status mcp-status-${status}`, role: 'img', 'aria-label': phaseText, title: phaseText }),
+            server.serverName),
           h('span', { className: 'mcp-tag' }, server.transport === 'stdio' ? 'stdio' : 'http'),
-          h('span', { className: running ? 'mcp-tag mcp-tag-ok' : 'mcp-tag mcp-tag-bad' }, server.enabled ? phaseText : t('row.disabled')),
           h('span', { className: 'mcp-tag' }, `${server.tools.length} ${t('row.tools')}`),
           !readOnly && h('span', { className: 'mcp-actions' },
             confirming
@@ -368,7 +399,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
           failOnStartupError: draft.failOnStartupError,
         })
       }
-      return h('form', { className: 'mcp-form', onSubmit: submit },
+      return h('form', { className: 'mcp-form mcp-server-form', onSubmit: submit },
         h('div', { className: 'mcp-card-top' },
           h('span', { className: 'mcp-name' }, editing ? t('form.editTitle') : t('form.addTitle'))),
         h('label', { className: 'mcp-field' },
@@ -383,8 +414,8 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
         draft.transport === 'stdio'
           ? h(React.Fragment, null,
             h('label', { className: 'mcp-field' }, h('span', null, t('form.command')), h('input', { type: 'text', value: draft.command, disabled: saving, onChange: set('command') })),
-            h('label', { className: 'mcp-field' }, h('span', null, t('form.args')), h('textarea', { value: draft.argsText, disabled: saving, onChange: set('argsText') })),
             h('label', { className: 'mcp-field' }, h('span', null, t('form.cwd')), h('input', { type: 'text', value: draft.cwd, disabled: saving, onChange: set('cwd') })),
+            h('label', { className: 'mcp-field' }, h('span', null, t('form.args')), h('textarea', { value: draft.argsText, disabled: saving, onChange: set('argsText') })),
             h('label', { className: 'mcp-field' }, h('span', null, t('form.env')), h('textarea', { value: draft.envText, disabled: saving, onChange: set('envText') })))
           : h(React.Fragment, null,
             h('label', { className: 'mcp-field' }, h('span', null, t('form.url')), h('input', { type: 'text', value: draft.url, disabled: saving, onChange: set('url'), placeholder: 'https://example.com/mcp' })),
@@ -399,10 +430,95 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       )
     }
 
-    /** The floating panel: list, add, edit, remove. */
+    /** Import standard MCP JSON without exposing credentials in the preview. */
+    function ImportForm({ t, remote, onImported, onCancel, onBusy }) {
+      const [text, setText] = useState('')
+      const [servers, setServers] = useState(null)
+      const [error, setError] = useState('')
+      const [busy, setBusy] = useState(false)
+      const locked = useRef(false)
+      const updateText = (value) => {
+        setText(value)
+        setServers(null)
+        setError('')
+      }
+      const run = async (operation) => {
+        if (locked.current) return
+        locked.current = true
+        setBusy(true)
+        onBusy(true)
+        setError('')
+        try {
+          await operation()
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error))
+        } finally {
+          locked.current = false
+          setBusy(false)
+          onBusy(false)
+        }
+      }
+      const chooseFile = (event) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+        updateText('')
+        void run(async () => {
+          if (file.size > 1024 * 1024) throw new Error(t('import.tooLarge'))
+          let value
+          try { value = await file.text() } catch { throw new Error(t('import.readFailed')) }
+          updateText(value)
+        })
+      }
+      const preview = (event) => {
+        event.preventDefault()
+        void run(async () => {
+          setServers(null)
+          if (new Blob([text]).size > 1024 * 1024) throw new Error(t('import.tooLarge'))
+          const result = await remote.previewImport(text)
+          if (!result.ok) throw new Error(result.message)
+          setServers(result.value.servers)
+        })
+      }
+      const commit = () => {
+        if (servers === null) return
+        void run(async () => {
+          const result = await remote.importServers(text)
+          if (!result.ok) {
+            setServers(null)
+            throw new Error(result.message)
+          }
+          await onImported(result.value.imported)
+        })
+      }
+      return h('form', { className: 'mcp-form', onSubmit: preview },
+        h('h3', { className: 'mcp-name', style: { margin: 0 } }, t('import.title')),
+        h('p', { className: 'mcp-sub' }, t('import.hint')),
+        h('label', { className: 'mcp-field' },
+          h('span', null, t('import.file')),
+          h('input', { type: 'file', accept: '.json,application/json', disabled: busy, onChange: chooseFile })),
+        h('label', { className: 'mcp-field' },
+          h('span', null, t('import.source')),
+          h('textarea', { value: text, disabled: busy, rows: 8, autoFocus: true, spellCheck: false,
+            placeholder: '{"mcpServers":{"example":{"command":"npx","args":["-y","example-mcp"]}}}',
+            onChange: (event) => updateText(event.target.value) })),
+        servers !== null && h('div', { className: 'mcp-card', 'aria-live': 'polite' },
+          h('p', { className: 'mcp-sub' }, `${t('import.ready')}${servers.length}`),
+          h('ul', null, ...servers.map((server) => h('li', { key: server.serverName },
+            server.serverName, ' ', h('span', { className: 'mcp-tag' }, server.transport === 'stdio' ? 'stdio' : 'http'))))),
+        error !== '' && h('p', { className: 'mcp-note mcp-note-error', role: 'alert' }, error),
+        h('div', { className: 'mcp-form-actions' },
+          h('button', { type: 'button', className: 'mcp-btn', disabled: busy, onClick: onCancel }, t('form.cancel')),
+          h('button', { type: 'submit', className: 'mcp-btn', disabled: busy || text.trim() === '' }, busy ? t('import.busy') : t('import.preview')),
+          servers !== null && h('button', { type: 'button', className: 'mcp-btn mcp-btn-primary', disabled: busy, onClick: commit }, t('import.confirm'))))
+    }
+
+    /** The floating panel: list, add, edit, remove and import. */
     function McpPanel({ t, remote, onClose }) {
       const [state, setState] = useState({ status: 'loading', manage: true, servers: [], error: '' })
       const [editing, setEditing] = useState(null)
+      const [importing, setImporting] = useState(false)
+      const [notice, setNotice] = useState('')
       const [saving, setSaving] = useState(false)
       const [removing, setRemoving] = useState('')
       const [actionError, setActionError] = useState('')
@@ -427,12 +543,14 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
         const onKey = (event) => {
           if (event.key !== 'Escape') return
           event.stopPropagation()
-          if (editing !== null) setEditing(null)
+          if (saving) return
+          if (importing) setImporting(false)
+          else if (editing !== null) setEditing(null)
           else onClose()
         }
         document.addEventListener('keydown', onKey, true)
         return () => document.removeEventListener('keydown', onKey, true)
-      }, [editing, onClose])
+      }, [editing, importing, saving, onClose])
 
       const submit = async (server) => {
         setSaving(true)
@@ -472,25 +590,34 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
         onRemove: (value) => { void remove(value) },
       })), [state.servers, readOnly, removing, t])
 
-      return h('div', { className: 'mcp-backdrop', role: 'presentation', onMouseDown: (event) => { if (event.target === event.currentTarget) onClose() } },
+      return h('div', { className: 'mcp-backdrop', role: 'presentation', onMouseDown: (event) => { if (!saving && event.target === event.currentTarget) onClose() } },
         h(StyleSheet),
         h('div', { className: 'mcp-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('panel.aria') },
           h('div', { className: 'mcp-head' },
             h('div', null,
-              h('h2', null, t('panel.title')),
-              h('p', { className: 'mcp-sub' }, t('panel.subtitle'))),
+              h('h2', null, t('panel.title'))),
             h('div', { className: 'mcp-head-actions' },
-              h('button', { type: 'button', className: 'mcp-btn', onClick: () => { void load() } }, t('panel.refresh')),
-              h('button', { type: 'button', className: 'mcp-btn', onClick: onClose, 'aria-label': t('panel.close') }, '✕'))),
+              h('button', { type: 'button', className: 'mcp-btn', disabled: saving || importing, onClick: () => { void load() } }, t('panel.refresh')),
+              h('button', { type: 'button', className: 'mcp-btn', disabled: saving, onClick: onClose, 'aria-label': t('panel.close') }, '✕'))),
           h('div', { className: 'mcp-body' },
             readOnly && h('p', { className: 'mcp-note' }, t('panel.readOnly')),
             actionError !== '' && h('p', { className: 'mcp-note mcp-note-error' }, actionError),
+            notice !== '' && h('p', { className: 'mcp-note', role: 'status' }, notice),
+            importing && h(ImportForm, {
+              t, remote, onBusy: setSaving,
+              onCancel: () => setImporting(false),
+              onImported: async (count) => {
+                setNotice(`${t('import.done')}${count}`)
+                setImporting(false)
+                await load()
+              },
+            }),
             state.status === 'loading' && h('p', { className: 'mcp-empty' }, t('panel.loading')),
             state.status === 'error' && h('div', null,
               h('p', { className: 'mcp-note mcp-note-error' }, `${t('panel.failed')}: ${state.error}`),
               h('button', { type: 'button', className: 'mcp-btn', onClick: () => { void load() } }, t('panel.retry'))),
-            state.status === 'ready' && rows.length === 0 && editing === null && h('p', { className: 'mcp-empty' }, t('panel.empty')),
-            state.status === 'ready' && rows,
+            state.status === 'ready' && !importing && rows.length === 0 && editing === null && h('p', { className: 'mcp-empty' }, t('panel.empty')),
+            state.status === 'ready' && !importing && editing === null && rows,
             editing !== null && h(ServerForm, {
               initial: editing,
               t,
@@ -498,8 +625,9 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
               onSubmit: (server) => { void submit(server) },
               onCancel: () => setEditing(null),
             }),
-            state.status === 'ready' && editing === null && !readOnly && h('div', { className: 'mcp-row', style: { marginTop: 12 } },
-              h('button', { type: 'button', className: 'mcp-btn mcp-btn-primary', onClick: () => setEditing(draftOf(undefined)) }, t('panel.add')))),
+            state.status === 'ready' && editing === null && !importing && !readOnly && h('div', { className: 'mcp-row', style: { marginTop: 12 } },
+              h('button', { type: 'button', className: 'mcp-btn mcp-btn-primary', onClick: () => { setNotice(''); setEditing(draftOf(undefined)) } }, t('panel.add')),
+              h('button', { type: 'button', className: 'mcp-btn', disabled: removing !== '', onClick: () => { setNotice(''); setActionError(''); setImporting(true) } }, t('import.title')))),
         ))
     }
 
@@ -543,6 +671,8 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       list: () => call({ action: 'list' }),
       save: (server) => call({ action: 'save', server }),
       remove: (serverName) => call({ action: 'remove', serverName }),
+      previewImport: (text) => call({ action: 'previewImport', text }),
+      importServers: (text) => call({ action: 'import', text }),
     }
 
     /** The session-scoped overlay that renders the panel while it is open. */
