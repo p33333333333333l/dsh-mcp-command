@@ -13,6 +13,7 @@
  *
  * @module dsh-mcp-servers
  */
+import { isDeepStrictEqual } from 'node:util'
 import { createProfilePatchWriter } from './profile-patch.js'
 
 /** Module name of one MCP server row. */
@@ -35,15 +36,30 @@ const SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/
 /** Row fields carried over unchanged when the panel rewrites an existing row. */
 const PRESERVED = ['toolCallTimeoutMs', 'maxInstructionBytes', 'failOnStartupError', 'reconnect']
 
-/** Order object keys so two equal configs serialize identically. */
-function canonical(value) {
-  if (Array.isArray(value)) return value.map((item) => canonical(item))
-  if (value !== null && typeof value === 'object') {
-    const out = {}
-    for (const key of Object.keys(value).sort()) out[key] = canonical(value[key])
-    return out
-  }
-  return value
+/** Prefix the panel shows in front of a `!!js` expression. */
+const JS_PREFIX = '!!js '
+
+/** Whether a value is a Loader expression marker (`{ __jsExpr }`). */
+function isJsExpr(value) {
+  return value !== null && typeof value === 'object' && typeof value.__jsExpr === 'string'
+}
+
+/** Render one dictionary value for the panel, keeping `!!js` expressions readable. */
+function renderValue(value) {
+  return isJsExpr(value) ? `${JS_PREFIX}${value.__jsExpr}` : String(value ?? '')
+}
+
+/**
+ * Restore one panel-entered dictionary value: a leading `!!js ` marks the value
+ * as a Loader expression again, so the header round-trips as an expression
+ * instead of being saved as the literal text the panel displayed.
+ */
+function restoreValue(text) {
+  const trimmed = text.trim()
+  // A bare `!!js` (the panel's own text for an empty expression) matches too, so
+  // the caller drops it instead of saving a header literally named `!!js`.
+  const expression = /^!!js(?:[ \t]+([\s\S]*))?$/.exec(trimmed)
+  return expression === null ? trimmed : { __jsExpr: expression[1] ?? '' }
 }
 
 /** Trim a dictionary, dropping blank keys and values. */
@@ -52,9 +68,21 @@ function cleanDict(input) {
   if (input !== null && typeof input === 'object') {
     for (const [key, value] of Object.entries(input)) {
       const name = String(key).trim()
-      const text = String(value ?? '').trim()
-      if (name !== '' && text !== '') out[name] = text
+      // A caller that posts the marker object directly keeps it; the panel posts
+      // the `!!js <expr>` text form, which `restoreValue` turns back into one.
+      const kept = isJsExpr(value) ? value : restoreValue(String(value ?? '').trim())
+      const blank = typeof kept === 'string' ? kept === '' : kept.__jsExpr === ''
+      if (name !== '' && !blank) out[name] = kept
     }
+  }
+  return out
+}
+
+/** Panel-visible copy of one dictionary, with `!!js` expressions rendered as text. */
+function viewDict(input) {
+  const out = {}
+  if (input !== null && typeof input === 'object') {
+    for (const [key, value] of Object.entries(input)) out[key] = renderValue(value)
   }
   return out
 }
@@ -126,7 +154,7 @@ class McpManager {
     const config = this.configFor(draft, previous)
 
     if (existing !== undefined) {
-      if (JSON.stringify(canonical(previous)) === JSON.stringify(canonical(config))) {
+      if (isDeepStrictEqual(previous, config)) {
         return { rowId: existing.rowId, created: false }
       }
       await this.ctx.configEditor.edit(existing.entry, () => ({ ...config }))
@@ -148,7 +176,10 @@ class McpManager {
     const name = String(serverName ?? '')
     const existing = this.rowNamed(name)
     if (existing === undefined) throw new McpError('not-found', `no MCP server named "${name}"`)
-    await this.patches().remove({ id: existing.rowId })
+    // `name` lets the writer drop the matching top-level override too: editing an
+    // inserted row appends one, and leaving it behind would resurrect the old
+    // config when the same server name is added again.
+    await this.patches().remove({ id: existing.rowId, name: MCP_CLIENT })
     return { removed: existing.rowId }
   }
 
@@ -161,10 +192,10 @@ class McpManager {
       transport: config.transport === 'stdio' ? 'stdio' : 'streamable-http',
       command: typeof config.command === 'string' ? config.command : '',
       args: Array.isArray(config.args) ? config.args.map(String) : [],
-      env: config.env && typeof config.env === 'object' ? { ...config.env } : {},
+      env: viewDict(config.env),
       cwd: typeof config.cwd === 'string' ? config.cwd : '',
       url: typeof config.url === 'string' ? config.url : '',
-      headers: config.headers && typeof config.headers === 'object' ? { ...config.headers } : {},
+      headers: viewDict(config.headers),
       failOnStartupError: config.failOnStartupError === true,
       enabled: entry.disabled !== true,
       phase: phaseOf(entry),
@@ -207,6 +238,9 @@ class McpManager {
     for (const key of PRESERVED) {
       if (previous[key] !== undefined) config[key] = previous[key]
     }
+    // The checkbox is authoritative when the panel sends it: a new row has no
+    // `previous`, so copying it only from there silently dropped the field.
+    if (typeof server.failOnStartupError === 'boolean') config.failOnStartupError = server.failOnStartupError
     config.serverName = server.serverName
     config.transport = server.transport
     if (server.transport === 'stdio') {

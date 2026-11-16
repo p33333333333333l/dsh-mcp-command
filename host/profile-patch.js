@@ -12,13 +12,53 @@
  * @module dsh-mcp-servers
  */
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import { loadProfileDirectory, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
-import { insertRow, parsePatch, patchesOf, removeRow, serializePatch } from './patch-doc.js'
+import { insertRow, parsePatch, removeRow, serializePatch } from './patch-doc.js'
 
 /** Bin name the profile helpers expect. */
 const BIN = 'dsh'
+
+/** Package that owns the Loader reconcile path this writer must share. */
+const APP_BOOT = '@deepseek-ai/dsh-app-boot'
+
+/** Resolved `dsh-app-boot` instance, shared by every write in this process. */
+let hostAppBoot
+
+/**
+ * Import the `dsh-app-boot` copy the running host itself imported.
+ *
+ * `reconcileProfilePatches` finds the root Include through a module-level
+ * WeakMap keyed by the booted `ctx`. That map is per module instance, so a
+ * second copy of the package (the one npm would install under this plugin)
+ * has an empty map and throws `profile reload requires the root Include entry`
+ * on every write. Resolving the package from the host's own installation
+ * anchor — the same anchor the Loader uses for bare plugin names — yields the
+ * exact module the host booted with, so the map is the host's.
+ *
+ * @param {string | undefined} installAnchor Absolute path of the dsh app's `package.json`.
+ * @returns {Promise<typeof import('@deepseek-ai/dsh-app-boot')>} The host's module.
+ */
+async function appBoot(installAnchor) {
+  if (hostAppBoot !== undefined) return hostAppBoot
+  let specifier
+  if (typeof installAnchor === 'string' && installAnchor !== '') {
+    // `resolve` walks the anchor's node_modules chain, which is the same lookup
+    // the Loader performs for the host's own imports; a file URL then makes the
+    // ESM cache hand back the instance the host already evaluated.
+    try {
+      specifier = pathToFileURL(createRequire(installAnchor).resolve(APP_BOOT)).href
+    } catch {
+      specifier = undefined
+    }
+  }
+  // Bare fallback for a host that exposes no anchor (tests, embedders). It can
+  // only ever find a second copy, so the reconcile call still fails loud.
+  hostAppBoot = await import(specifier ?? APP_BOOT)
+  return hostAppBoot
+}
 
 /**
  * Build the patch writer.
@@ -42,15 +82,15 @@ function createProfilePatchWriter(ctx) {
   /** Persist the document and wait for the Loader to settle, restoring on failure. */
   async function persist(before, document, requiredIds) {
     const text = serializePatch(document)
+    const { readProfilePatches, reconcileProfilePatches } = await appBoot(profile.installAnchor)
     await writeFileAtomic(profile.patchPath, text, { mode: 0o600 })
     try {
-      // Everything after the write stays inside the rollback guard: a failure
-      // while reading the just-written patches would otherwise leave the file
-      // changed while the Loader still runs the previous composition.
-      const patches = readProfilePatches(BIN, profile, {
-        ...loadProfileDirectory(BIN, profile.dir, profile.installAnchor),
-        patches: patchesOf(text),
-      })
+      // Read the patch back through dsh's own loader dialect instead of
+      // re-parsing `text` here: `entryListSchema` turns `!!js` into
+      // `{ __jsExpr }`, while a plain `toJS()` would hand the Loader a literal
+      // string and silently flip every expression row for the rest of the
+      // session. Everything after the write stays inside the rollback guard.
+      const patches = readProfilePatches(BIN, profile)
       await reconcileProfilePatches(ctx.root, patches, BIN, requiredIds)
     } catch (error) {
       await writeFileAtomic(profile.patchPath, before, { mode: 0o600 })
