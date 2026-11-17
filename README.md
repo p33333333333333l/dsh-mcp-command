@@ -1,4 +1,4 @@
-# MCP Servers
+# dsh-mcp-servers
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
