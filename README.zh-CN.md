@@ -86,6 +86,18 @@ DSH 在加载配置时求值，已有表达式在编辑时保留。多行值的�
         manage: false
 ```
 
+## 开发目录
+
+| 位置 | 用途 |
+| --- | --- |
+| [`host/`](host/) | 宿主端管理接口、配置文档编辑及 profile 写入与重载。 |
+| [`client/`](client/) | 浏览器中的 `/mcp` 面板及交互。 |
+| [`locale/`](locale/) | 中文、英文界面文案。 |
+| [`assets/`](assets/) | 插件市场图标与展示截图。 |
+| [`test/`](test/) | 导入、配置文档编辑及前后端约定的回归检查。 |
+
+根目录的 `package.json`、`cordis.patch.yml`、`index.json`、`screenshots.json` 和 `icon.svg` 是包、插件或市场使用的入口与元数据，保留在原位。测试命令为 `npm test`。
+
 ## 协议
 
 [Apache License 2.0](LICENSE)
