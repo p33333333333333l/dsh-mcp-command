@@ -11,7 +11,7 @@ Manage MCP servers in DSH with `/mcp`. View connection status and available tool
 Add this plugin market index in DSH, then install **MCP Servers**:
 
 ```
-https://raw.githubusercontent.com/p33333333333333l/dsh-mcp-servers/main/index.json
+https://raw.githubusercontent.com/p33333333333333l/dsh-mcp-servers/refs/heads/main/index.json
 ```
 
 Or install directly through the plugin manager:

@@ -11,7 +11,7 @@
 在 DSH 中添加以下插件市场索引，再安装「MCP 服务器」：
 
 ```
-https://raw.githubusercontent.com/p33333333333333l/dsh-mcp-servers/main/index.json
+https://raw.githubusercontent.com/p33333333333333l/dsh-mcp-servers/refs/heads/main/index.json
 ```
 
 也可以通过插件管理器直接安装：
