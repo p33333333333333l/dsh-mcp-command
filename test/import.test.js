@@ -153,7 +153,7 @@ export async function reconcileProfilePatches(_root, text, _bin, ids) {
 
   await writeFile(patchPath, before)
   duringLock = () => entries.push(entry('remote'))
-  await assert.rejects(instance.importServers(batch), invalid)
+  await assert.rejects(instance.importServers(batch), { importIssue: { kind: 'duplicate-server', params: { serverName: 'remote' } } })
   assert.equal(await readFile(patchPath, 'utf8'), before)
   assert.equal(state.calls.length, 1)
   duringLock = () => {}
@@ -182,7 +182,7 @@ test('route import actions use text and retain the response envelopes', async ()
   try {
     apply({
       profileContext: { dir, patchPath: join(dir, 'unused.yml') },
-      loader: { entries: () => [] }, get: () => undefined,
+      loader: { entries: () => [entry('existing')] }, get: () => undefined,
       effect: (callback) => callback(),
       connection: { fetch: { register: (value) => { route = value } } },
     })
@@ -190,11 +190,25 @@ test('route import actions use text and retain the response envelopes', async ()
     const preview = await request({ action: 'previewImport', text: batch })
     assert.equal(preview.status, 200)
     assert.deepEqual(await preview.json(), { value: manager().instance.previewImport(batch) })
-    const failure = await request({ action: 'import', text: '{"a":{"type":"sse","url":"https://e"}}' })
-    assert.equal(failure.status, 400)
-    const body = await failure.json()
-    assert.equal(body.error.code, 'invalid')
-    assert.equal(typeof body.error.message, 'string')
+    const errors = [
+      ['{', { kind: 'invalid-json' }],
+      ['{"a":{"command":"node","command":"node"}}', { kind: 'duplicate-key' }],
+      ['{"existing":{"command":"node"}}', { kind: 'duplicate-server', params: { serverName: 'existing' } }],
+      ['{"a":{"type":"sse","url":"https://e"}}', { kind: 'unsupported-transport', params: { serverName: 'a' } }],
+      ['{"a":{"command":"node","disabled":true}}', {
+        kind: 'unsupported-field', params: { serverName: 'a', field: 'disabled', allowed: 'type, command, args, env, cwd' },
+      }],
+      ['[]', undefined],
+    ]
+    for (const [text, importIssue] of errors) {
+      const failure = await request({ action: 'import', text })
+      assert.equal(failure.status, 400)
+      const body = await failure.json()
+      assert.equal(body.error.code, 'invalid')
+      assert.equal(typeof body.error.message, 'string')
+      assert.deepEqual(body.error.importIssue, importIssue)
+    }
+    await assert.rejects(readFile(join(dir, 'unused.yml')), { code: 'ENOENT' })
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

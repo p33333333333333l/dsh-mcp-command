@@ -9,7 +9,7 @@ let client
 const source = readFileSync(new URL('../client/client.js', import.meta.url), 'utf8')
 const instrumented = source.replace(
   "return { inject: ['slots', 'locale'], apply }",
-  'return { parsePairs, formatPairs }',
+  'return { parsePairs, formatPairs, importErrorMessage, zh, en }',
 )
 assert.notEqual(instrumented, source)
 vm.runInNewContext(instrumented, {
@@ -48,4 +48,22 @@ for (const field of ['headers', 'env']) {
 test('ordinary pair lines still split on the first equals sign', () => {
   const parsed = client.parsePairs(' A = one=two\n\nB=three\nignored')
   assert.deepEqual({ ...parsed }, { A: 'one=two', B: 'three' })
+})
+
+test('import error feedback uses both dictionaries and falls back for unknown errors', () => {
+  for (const dictionary of [client.zh, client.en]) {
+    const t = (key, params = {}) => (dictionary[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => params[name])
+    const message = 'backend fallback'
+    for (const [kind, params, expected] of [
+      ['invalid-json', {}, /JSON/],
+      ['duplicate-key', {}, /JSON/],
+      ['duplicate-server', { serverName: 'demo' }, /demo/],
+      ['unsupported-transport', { serverName: 'demo' }, /demo.*stdio.*streamable-http/],
+      ['unsupported-field', { serverName: 'demo', field: 'disabled', allowed: 'type, url, headers' }, /demo.*disabled.*type, url, headers/],
+    ]) {
+      assert.match(client.importErrorMessage(t, { message, importIssue: { kind, params } }), expected)
+    }
+    assert.equal(client.importErrorMessage(t, { message }), message)
+    assert.equal(client.importErrorMessage(t, { message, importIssue: { kind: 'unknown' } }), message)
+  }
 })

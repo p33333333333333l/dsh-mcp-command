@@ -38,6 +38,11 @@ window.__ModuleLoader__.load({
       'import.done': '已导入服务器：',
       'import.tooLarge': '配置不能超过 1 MiB。',
       'import.readFailed': '无法读取文件。',
+      'import.error.invalid-json': '无法解析 JSON。请检查粘贴或选择的内容是否是完整、有效的 JSON，再重试。',
+      'import.error.duplicate-key': 'JSON 中有重复的键。请删除或重命名重复项后重试。',
+      'import.error.duplicate-server': '服务器「{serverName}」已存在。本次未写入任何配置，请改用其他服务器名后重试。',
+      'import.error.unsupported-transport': '服务器「{serverName}」的 type 不受支持。可用类型为 stdio、http 或 streamable-http。SSE 服务需提供 Streamable HTTP 地址才能按 HTTP 导入。',
+      'import.error.unsupported-field': '服务器「{serverName}」不支持字段「{field}」。此连接方式支持 {allowed}。请检查连接方式或移除该字段后重试。',
       'panel.empty': '还没有配置 MCP 服务器。',
       'panel.loading': '正在读取配置…',
       'panel.failed': '读取失败',
@@ -89,6 +94,11 @@ window.__ModuleLoader__.load({
       'import.done': 'Servers imported: ',
       'import.tooLarge': 'Configuration must be 1 MiB or smaller.',
       'import.readFailed': 'Could not read the file.',
+      'import.error.invalid-json': 'Could not parse the JSON. Check that the pasted content or file contains complete, valid JSON, then try again.',
+      'import.error.duplicate-key': 'The JSON contains duplicate keys. Remove or rename the duplicates and try again.',
+      'import.error.duplicate-server': 'Server “{serverName}” already exists. No configuration was written. Choose a different server name and try again.',
+      'import.error.unsupported-transport': 'The type for server “{serverName}” is not supported. Use stdio, http, or streamable-http. An SSE server needs a Streamable HTTP endpoint to be imported as HTTP.',
+      'import.error.unsupported-field': 'Server “{serverName}” does not support the field “{field}”. This connection type accepts {allowed}. Check the connection type or remove the field and try again.',
       'panel.empty': 'No MCP server is configured yet.',
       'panel.loading': 'Reading configuration…',
       'panel.failed': 'Could not read the configuration',
@@ -451,7 +461,6 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
         const file = event.target.files?.[0]
         event.target.value = ''
         if (!file) return
-        updateText('')
         void run(async () => {
           if (file.size > 1024 * 1024) throw new Error(t('import.tooLarge'))
           let value
@@ -464,7 +473,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
         void run(async () => {
           if (new Blob([text]).size > 1024 * 1024) throw new Error(t('import.tooLarge'))
           const result = await remote.importServers(text)
-          if (!result.ok) throw new Error(result.message)
+          if (!result.ok) throw new Error(importErrorMessage(t, result))
           await onImported(result.value.imported)
         })
       }
@@ -611,7 +620,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
      * the Desktop page (`dsh-app://app`) resolves it against `streamBaseUrl`.
      *
      * @param {object} body Operation payload.
-     * @returns {Promise<{ ok: true, value: any } | { ok: false, message: string }>}
+     * @returns {Promise<{ ok: true, value: any } | { ok: false, message: string, importIssue?: { kind: string, params?: object } }>}
      */
     async function call(body) {
       let response
@@ -632,9 +641,21 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
         return { ok: false, message: `HTTP ${response.status}: ${text.slice(0, 200)}` }
       }
       if (!response.ok || payload.error !== undefined) {
-        return { ok: false, message: String(payload.error?.message ?? `HTTP ${response.status}`) }
+        return {
+          ok: false,
+          message: String(payload.error?.message ?? `HTTP ${response.status}`),
+          importIssue: payload.error?.importIssue,
+        }
       }
       return { ok: true, value: payload.value }
+    }
+
+    function importErrorMessage(t, result) {
+      const issue = result.importIssue
+      if (!issue) return result.message
+      const key = `import.error.${issue.kind}`
+      const message = t(key, issue.params)
+      return message === key ? result.message : message
     }
 
     /** The Host operations the panel drives. */

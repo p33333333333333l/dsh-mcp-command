@@ -107,10 +107,12 @@ class McpError extends Error {
   /**
    * @param {string} code Stable lower-kebab code the panel shows.
    * @param {string} message Human explanation.
+   * @param {{ kind: string, params?: Record<string, string> }} [importIssue] Localizable import failure.
    */
-  constructor(code, message) {
+  constructor(code, message, importIssue) {
     super(message)
     this.code = code
+    this.importIssue = importIssue
     this.name = 'McpError'
   }
 }
@@ -123,14 +125,14 @@ function parseImport(text) {
   try {
     input = JSON.parse(text)
   } catch {
-    throw new McpError('invalid', 'import text is not JSON')
+    throw new McpError('invalid', 'import text is not JSON', { kind: 'invalid-json' })
   }
   // JSON.parse keeps only the last duplicate; inspect keys before accepting that loss.
   if (parseDocument(text).errors.some((error) => error.code === 'DUPLICATE_KEY')) {
-    throw new McpError('invalid', 'import JSON contains duplicate keys')
+    throw new McpError('invalid', 'import JSON contains duplicate keys', { kind: 'duplicate-key' })
   }
   const plain = (value) => value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype
-  const invalid = (message) => { throw new McpError('invalid', message) }
+  const invalid = (message, importIssue) => { throw new McpError('invalid', message, importIssue) }
   if (!plain(input)) invalid('import must be an object')
   if (Object.hasOwn(input, 'mcpServers')) {
     if (Object.keys(input).length !== 1) invalid('only mcpServers is supported at the import root')
@@ -141,11 +143,17 @@ function parseImport(text) {
     if (!SERVER_NAME.test(serverName)) invalid(`invalid server name "${serverName}"; use 1-32 characters of A-Z a-z 0-9 _ -`)
     if (!plain(server)) invalid(`server "${serverName}" must be an object`)
     const type = Object.hasOwn(server, 'type') ? server.type : (Object.hasOwn(server, 'url') ? 'http' : 'stdio')
-    if (!['stdio', 'http', 'streamable-http'].includes(type)) invalid(`unsupported transport for "${serverName}"`)
+    if (!['stdio', 'http', 'streamable-http'].includes(type)) {
+      invalid(`unsupported transport for "${serverName}"`, { kind: 'unsupported-transport', params: { serverName } })
+    }
     const stdio = type === 'stdio'
     const allowed = stdio ? ['type', 'command', 'args', 'env', 'cwd'] : ['type', 'url', 'headers']
     for (const key of Object.keys(server)) {
-      if (!allowed.includes(key)) invalid(`unsupported field "${key}" for "${serverName}"`)
+      if (!allowed.includes(key)) {
+        invalid(`unsupported field "${key}" for "${serverName}"`, {
+          kind: 'unsupported-field', params: { serverName, field: key, allowed: allowed.join(', ') },
+        })
+      }
     }
     const required = stdio ? 'command' : 'url'
     if (typeof server[required] !== 'string' || server[required].trim() === '') invalid(`"${serverName}" needs a nonempty ${required} string`)
@@ -225,7 +233,12 @@ class McpManager {
     this.requireManage()
     const servers = parseImport(text)
     for (const server of servers) {
-      if (this.rowNamed(server.serverName) !== undefined) throw new McpError('invalid', `MCP server "${server.serverName}" already exists`)
+      const { serverName } = server
+      if (this.rowNamed(serverName) !== undefined) {
+        throw new McpError('invalid', `MCP server "${serverName}" already exists`, {
+          kind: 'duplicate-server', params: { serverName },
+        })
+      }
     }
     return { servers }
   }
@@ -242,7 +255,7 @@ class McpManager {
     try {
       await this.patches().insertMany(rows)
     } catch (error) {
-      if (error.code === 'invalid') throw new McpError('invalid', error.message)
+      if (error.code === 'invalid') throw new McpError('invalid', error.message, error.importIssue)
       throw error
     }
     return { imported: rows.length }
@@ -449,7 +462,8 @@ export function apply(ctx, config = {}) {
       } catch (error) {
         const code = error instanceof McpError ? error.code : 'operation-error'
         const message = error instanceof Error ? error.message : String(error)
-        return json({ error: { code, message } }, 400)
+        const importIssue = error instanceof McpError ? error.importIssue : undefined
+        return json({ error: { code, message, importIssue } }, 400)
       }
     },
   }), 'mcp-manager: /api/mcp.manager route')

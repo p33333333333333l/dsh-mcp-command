@@ -143,7 +143,11 @@ function createProfilePatchWriter(ctx) {
         })
         for (const row of rows) {
           const name = row.config.serverName
-          if (names.has(name)) throw Object.assign(new Error(`MCP server "${name}" already exists`), { code: 'invalid' })
+          if (names.has(name)) {
+            throw Object.assign(new Error(`MCP server "${name}" already exists`), {
+              code: 'invalid', importIssue: { kind: 'duplicate-server', params: { serverName: name } },
+            })
+          }
           names.add(name)
         }
         for (const row of rows) insertRow(document, row)

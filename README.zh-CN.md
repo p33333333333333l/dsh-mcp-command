@@ -11,7 +11,7 @@
 在 DSH 中添加以下插件市场索引，再安装「MCP 服务器」：
 
 ```
-https://p33333333333333l.github.io/dsh-mcp-servers/index.json
+https://raw.githubusercontent.com/p33333333333333l/dsh-mcp-servers/main/index.json
 ```
 
 也可以通过插件管理器直接安装：
@@ -66,7 +66,7 @@ DSH 在加载配置时求值，已有表达式在编辑时保留。多行值的�
 
 本地服务器支持 `command`、`args`、`env`、`cwd`。远程服务器支持 `url`、`headers`；`type` 可省略，也可设为 `"http"` 或 `"streamable-http"`。
 
-遇到重名、格式错误或不支持的字段（包括 SSE、`disabled`）时，整批不写入，也不会覆盖已有服务器。写入或重载失败会整批回滚。
+遇到重名、格式错误或不支持的字段（包括 SSE、`disabled`）时，整批不写入，也不会覆盖已有服务器。导入面板会保留输入，可按提示修改后重试。写入或重载失败会整批回滚。
 
 导入的环境变量和请求头保留为普通字符串，包括后续编辑时未修改的 `!!js` 文本。字典中的保留键 `__jsExpr` 不支持导入。
 

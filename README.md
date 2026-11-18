@@ -11,7 +11,7 @@ Manage MCP servers in DSH with `/mcp`. View connection status and available tool
 Add this plugin market index in DSH, then install **MCP Servers**:
 
 ```
-https://p33333333333333l.github.io/dsh-mcp-servers/index.json
+https://raw.githubusercontent.com/p33333333333333l/dsh-mcp-servers/main/index.json
 ```
 
 Or install directly through the plugin manager:
@@ -66,7 +66,7 @@ Accepts a `mcpServers` object or a plain object keyed by server name:
 
 Local servers support `command`, `args`, `env` and `cwd`. Remote servers support `url` and `headers`; `type` may be omitted or set to `"http"` or `"streamable-http"`.
 
-Duplicate names, invalid data or unsupported fields (including SSE and `disabled`) reject the whole batch without overwriting existing servers. Failed writes or reloads roll back the batch.
+Duplicate names, invalid data or unsupported fields (including SSE and `disabled`) reject the whole batch without overwriting existing servers. The import panel keeps your input so you can follow the error message and retry. Failed writes or reloads roll back the batch.
 
 Imported environment variables and headers stay literal strings, including unchanged `!!js` text on later edits. The reserved dictionary key `__jsExpr` is not accepted.
 
