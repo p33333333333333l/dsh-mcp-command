@@ -34,10 +34,7 @@ window.__ModuleLoader__.load({
       'import.source': 'JSON 配置',
       'import.file': '选择 JSON 文件',
       'import.hint': '粘贴 mcpServers 配置，或选择 JSON 文件。重名服务器不会被覆盖。',
-      'import.preview': '预览',
-      'import.confirm': '确认导入',
       'import.busy': '处理中…',
-      'import.ready': '待导入服务器：',
       'import.done': '已导入服务器：',
       'import.tooLarge': '配置不能超过 1 MiB。',
       'import.readFailed': '无法读取文件。',
@@ -88,10 +85,7 @@ window.__ModuleLoader__.load({
       'import.source': 'JSON configuration',
       'import.file': 'Choose JSON file',
       'import.hint': 'Paste mcpServers JSON or choose a file. Existing servers are never overwritten.',
-      'import.preview': 'Preview',
-      'import.confirm': 'Confirm import',
       'import.busy': 'Working…',
-      'import.ready': 'Servers to import: ',
       'import.done': 'Servers imported: ',
       'import.tooLarge': 'Configuration must be 1 MiB or smaller.',
       'import.readFailed': 'Could not read the file.',
@@ -428,16 +422,13 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       )
     }
 
-    /** Import standard MCP JSON without exposing credentials in the preview. */
     function ImportForm({ t, remote, onImported, onCancel, onBusy }) {
       const [text, setText] = useState('')
-      const [servers, setServers] = useState(null)
       const [error, setError] = useState('')
       const [busy, setBusy] = useState(false)
       const locked = useRef(false)
       const updateText = (value) => {
         setText(value)
-        setServers(null)
         setError('')
       }
       const run = async (operation) => {
@@ -468,28 +459,16 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
           updateText(value)
         })
       }
-      const preview = (event) => {
+      const submit = (event) => {
         event.preventDefault()
         void run(async () => {
-          setServers(null)
           if (new Blob([text]).size > 1024 * 1024) throw new Error(t('import.tooLarge'))
-          const result = await remote.previewImport(text)
-          if (!result.ok) throw new Error(result.message)
-          setServers(result.value.servers)
-        })
-      }
-      const commit = () => {
-        if (servers === null) return
-        void run(async () => {
           const result = await remote.importServers(text)
-          if (!result.ok) {
-            setServers(null)
-            throw new Error(result.message)
-          }
+          if (!result.ok) throw new Error(result.message)
           await onImported(result.value.imported)
         })
       }
-      return h('form', { className: 'mcp-form', onSubmit: preview },
+      return h('form', { className: 'mcp-form', onSubmit: submit },
         h('h3', { className: 'mcp-name', style: { margin: 0 } }, t('import.title')),
         h('p', { className: 'mcp-sub' }, t('import.hint')),
         h('label', { className: 'mcp-field' },
@@ -500,15 +479,10 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
           h('textarea', { value: text, disabled: busy, rows: 8, autoFocus: true, spellCheck: false,
             placeholder: '{"mcpServers":{"example":{"command":"npx","args":["-y","example-mcp"]}}}',
             onChange: (event) => updateText(event.target.value) })),
-        servers !== null && h('div', { className: 'mcp-card', 'aria-live': 'polite' },
-          h('p', { className: 'mcp-sub' }, `${t('import.ready')}${servers.length}`),
-          h('ul', null, ...servers.map((server) => h('li', { key: server.serverName },
-            server.serverName, ' ', h('span', { className: 'mcp-tag' }, server.transport === 'stdio' ? 'stdio' : 'http'))))),
         error !== '' && h('p', { className: 'mcp-note mcp-note-error', role: 'alert' }, error),
         h('div', { className: 'mcp-form-actions' },
           h('button', { type: 'button', className: 'mcp-btn', disabled: busy, onClick: onCancel }, t('form.cancel')),
-          h('button', { type: 'submit', className: 'mcp-btn', disabled: busy || text.trim() === '' }, busy ? t('import.busy') : t('import.preview')),
-          servers !== null && h('button', { type: 'button', className: 'mcp-btn mcp-btn-primary', disabled: busy, onClick: commit }, t('import.confirm'))))
+          h('button', { type: 'submit', className: 'mcp-btn mcp-btn-primary', disabled: busy || text.trim() === '' }, busy ? t('import.busy') : t('import.title'))))
     }
 
     /** The floating panel: list, add, edit, remove and import. */
@@ -668,7 +642,6 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       list: () => call({ action: 'list' }),
       save: (server) => call({ action: 'save', server }),
       remove: (serverName) => call({ action: 'remove', serverName }),
-      previewImport: (text) => call({ action: 'previewImport', text }),
       importServers: (text) => call({ action: 'import', text }),
     }
 

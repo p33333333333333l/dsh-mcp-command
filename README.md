@@ -27,7 +27,7 @@ Restart DSH or refresh the page after installation.
 Enter `/mcp` in the conversation input and select **MCP Servers**, or press Enter. The panel follows your interface language (English or Chinese).
 
 - Add or edit a server in the form, or delete it after confirmation.
-- Import servers by pasting JSON or choosing a file, then reviewing the preview.
+- Paste JSON or choose a file, then click **Import**.
 - Check the status dot beside each name: green means running, yellow means pending, red means failed, and gray means disabled or inactive. Hover for details.
 
 Press `Esc` or enter `/mcp` again to close the panel.
