@@ -32,7 +32,7 @@
           "source": {
             "type": "git",
             "url": "https://github.com/p33333333333333l/dsh-mcp-servers",
-            "commit": "1da5dbe8ff69cc758d85678d98e059783c028fa1"
+            "commit": "38df72cf354f7a75e4ffbbbb0e3d62a116eb5fac"
           },
           "engines": {
             "dsh": ">=0.2.1-rc.1 <0.3.0"
