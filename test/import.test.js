@@ -113,12 +113,17 @@ test('batch writer persists once, rechecks under lock and restores all bytes on 
   await mkdir(bootDir, { recursive: true })
   await writeFile(join(dir, 'package.json'), '{}')
   await writeFile(join(bootDir, 'package.json'), JSON.stringify({ type: 'module', exports: './index.js' }))
-  await writeFile(join(bootDir, 'index.js'), `import { readFileSync } from 'node:fs';
-export const state = { reads: 0, calls: [], fail: false };
-export function readProfilePatches(_bin, profile) { state.reads++; return readFileSync(profile.patchPath, 'utf8') }
+  await writeFile(join(bootDir, 'index.js'), `export const state = { calls: [], fail: false, override: undefined, omit: undefined, mounted: [] };
+export function loadProfileDirectory() { return {} }
+export function readProfilePatches(_bin, _profile, candidate) { return candidate.patches }
+export function composeEntries([patches]) {
+  return patches.flatMap((patch) => patch.insert ?? []).map((row) =>
+    row.id === state.override ? { ...row, disabled: true } : row)
+}
 export async function reconcileProfilePatches(_root, text, _bin, ids) {
   state.calls.push({ text, ids });
   if (state.fail && ids?.length) throw new Error('activation failed');
+  state.mounted = composeEntries([text]).filter((row) => row.id !== state.omit).map((options) => ({ options }));
 }
 `)
   const { state } = await import(pathToFileURL(join(bootDir, 'index.js')).href)
@@ -129,7 +134,7 @@ export async function reconcileProfilePatches(_root, text, _bin, ids) {
   let locks = 0
   let duringLock = () => {}
   const ctx = {
-    root: {}, profileContext: { dir, patchPath, installAnchor: join(dir, 'package.json') },
+    root: { loader: { entries: () => state.mounted } }, profileContext: { dir, patchPath, installAnchor: join(dir, 'package.json') },
     loader: { entries: () => entries },
     get: () => ({ runExclusive: async (run) => { locks++; duringLock(); return run() } }),
   }
@@ -137,7 +142,7 @@ export async function reconcileProfilePatches(_root, text, _bin, ids) {
   const instance = new McpManager(ctx, {}, writer)
   assert.deepEqual(await instance.importServers(batch), { imported: 2 })
   assert.equal(locks, 1)
-  assert.equal(state.reads, 1, 'one persist/reconcile pass for the entire batch')
+  assert.equal(state.calls.length, 1, 'one reload for the entire batch')
   assert.deepEqual(state.calls[0].ids, ['mcp-local', 'mcp-remote'])
   const written = await readFile(patchPath, 'utf8')
   const rows = parse(written, { customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: (value) => ({ __jsExpr: value }) }] })[0].insert
@@ -168,12 +173,32 @@ export async function reconcileProfilePatches(_root, text, _bin, ids) {
 
   await assert.rejects(instance.importServers('{"literal-env":{"command":"node","env":{"__jsExpr":"literal code"}}}'), invalid)
   assert.equal(await readFile(patchPath, 'utf8'), before)
+  state.override = 'mcp-local'
+  await assert.rejects(instance.importServers(batch), /overridden/)
+  assert.equal(await readFile(patchPath, 'utf8'), before)
+  assert.equal(state.calls.length, 1)
+  state.override = undefined
+  await writeFile(patchPath, '- config: { marker: { __jsExpr: literal } }\n')
+  assert.throws(() => writer.assertSafeConfigEdit(), /rewrite a literal/)
+  await writeFile(patchPath, '- config: { marker: !!js literal }\n')
+  assert.doesNotThrow(() => writer.assertSafeConfigEdit())
+  await writeFile(patchPath, before)
   const callsBeforeFailure = state.calls.length
   state.fail = true
   const beforeFailure = await readFile(patchPath, 'utf8')
   await assert.rejects(instance.importServers(batch), /activation failed/)
   assert.equal(await readFile(patchPath, 'utf8'), beforeFailure, 'the whole original file is restored')
   assert.equal(state.calls.length, callsBeforeFailure + 2, 'one failed reconcile and one rollback reconcile')
+  state.fail = false
+  state.omit = 'mcp-local'
+  await assert.rejects(instance.importServers(batch), /did not load/)
+  assert.equal(await readFile(patchPath, 'utf8'), before)
+  state.omit = undefined
+  state.fail = true
+  assert.equal(join(dir, 'cordis.patch.yml'), patchPath)
+  await rm(patchPath)
+  await assert.rejects(instance.importServers(batch), /activation failed/)
+  await assert.rejects(readFile(patchPath), { code: 'ENOENT' })
 })
 
 test('route import actions use text and retain the response envelopes', async () => {
@@ -212,4 +237,43 @@ test('route import actions use text and retain the response envelopes', async ()
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('add rejects an existing name and edit rejects a stale row id', async () => {
+  const { instance, writes } = manager([entry('existing')])
+  const draft = { serverName: 'existing', transport: 'stdio', command: 'node' }
+  await assert.rejects(instance.save(draft), /already exists/)
+  await assert.rejects(instance.save({ ...draft, rowId: 'stale' }), /changed or no longer exists/)
+  await assert.rejects(instance.save({ ...draft, serverName: 'missing', rowId: 'stale' }), /changed or no longer exists/)
+  assert.deepEqual(writes, [])
+})
+
+test('an edit checks the original revision again after the editor acquires its lock', async () => {
+  const row = entry('current')
+  row.options.config = { serverName: 'current', transport: 'stdio', command: ' node ', args: [''], startupTimeoutMs: 2000, expandTemplates: true }
+  let onDisk = { ...row.options.config, env: { UPDATED: 'yes' } }
+  let saved
+  const ctx = {
+    get: () => undefined,
+    loader: { entries: () => [row] },
+    configEditor: { edit: async (_row, change) => { saved = change(onDisk) } },
+  }
+  const manager = new McpManager(ctx)
+  const { revision, rowId, transport, serverName } = manager.view(row, row.options.config)
+  const draft = { revision, rowId, transport, serverName, failOnStartupError: true }
+  await assert.rejects(manager.save(draft), /configuration changed/)
+  assert.equal(saved, undefined)
+  onDisk = row.options.config
+  await manager.save(draft)
+  assert.deepEqual(saved, { ...onDisk, failOnStartupError: true })
+})
+
+test('remove uses the selected row when another server has the same name', async () => {
+  const selected = entry('same', 'selected')
+  const ctx = { loader: { entries: () => [entry('same', 'first'), selected] }, get: () => undefined }
+  const removed = []
+  const manager = new McpManager(ctx, {}, { remove: async (row) => removed.push(row) })
+  const { serverName, rowId, revision } = manager.view(selected, selected.options.config)
+  await manager.remove(serverName, rowId, revision)
+  assert.deepEqual(removed, [selected.options])
 })

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Manage MCP servers in DSH with `/mcp`. View connection status and available tools, import configurations, and add, edit or remove local stdio and remote HTTP servers.
+Manage MCP servers in DSH with `/mcp`. View plugin status and available tools, import configurations, and add, edit or remove local stdio and remote HTTP servers.
 
 ![MCP Servers in the /mcp command menu](assets/screenshots/command-menu.png)
 
@@ -26,9 +26,9 @@ Restart DSH or refresh the page after installation.
 
 Enter `/mcp` in the conversation input and select **MCP Servers**, or press Enter. The panel follows your interface language (English or Chinese).
 
-- Add or edit a server in the form, or delete it after confirmation.
+- Add or edit a server in the form, or delete it after confirmation. Server names are fixed after creation.
 - Paste JSON or choose a file, then click **Import**.
-- Check the status dot beside each name: green means running, yellow means pending, red means failed, and gray means disabled or inactive. Hover for details.
+- Check the status dot beside each name: green means the MCP client plugin loaded, yellow means pending, red means loading failed, and gray means disabled or inactive. Check the tool list for tools currently registered.
 
 Press `Esc` or enter `/mcp` again to close the panel.
 
@@ -75,7 +75,8 @@ Imported environment variables and headers stay literal strings, including uncha
 - The panel manages the current DSH profile. Install the plugin separately in each profile you use.
 - Changes update that profile's `cordis.patch.yml`. Back up `~/.dsh/profiles/<profile>/cordis.patch.yml` before first use.
 - Saving reconnects the MCP client and may interrupt active tool calls. Deleting a server removes all its tools.
-- Servers defined as top-level overrides rather than in an `insert` list can be viewed, but must be removed manually.
+- The panel can remove servers with a unique insertion in the current profile patch. Remove other servers where they are defined.
+- If a server changed after you opened its form, reopen the panel before saving. Patch files reached through symbolic links and literal `__jsExpr` maps that the host editor would rewrite must be edited directly.
 - The panel uses your authenticated DSH session. Set `manage: false` in the plugin configuration for read-only access:
 
 ```yaml

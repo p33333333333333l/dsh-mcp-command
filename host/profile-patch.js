@@ -11,13 +11,14 @@
  *
  * @module dsh-mcp-servers
  */
-import { readFile } from 'node:fs/promises'
+import { lstatSync, readFileSync } from 'node:fs'
+import { lstat, readFile, unlink } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import { isMap, visit } from 'yaml'
-import { insertRow, parsePatch, removeRow, serializePatch } from './patch-doc.js'
+import { isDeepStrictEqual } from 'node:util'
+import { hasInsertedRow, hasLiteralExpressionMap, insertRow, parsePatch, removeRow, serializePatch } from './patch-doc.js'
 
 /** Bin name the profile helpers expect. */
 const BIN = 'dsh'
@@ -64,83 +65,98 @@ async function appBoot(installAnchor) {
 /**
  * Build the patch writer.
  * @param {import('@deepseek-ai/cordis').Context} ctx Plugin context that owns the profile.
- * @returns {{ insert: (row: object) => Promise<void>, insertMany: (rows: object[]) => Promise<void>, remove: (row: object) => Promise<void> }}
+ * @returns {{ insertMany: (rows: object[]) => Promise<void>, remove: (row: object) => Promise<void> }}
  */
 function createProfilePatchWriter(ctx) {
   const profile = ctx.profileContext
   if (profile === undefined) throw new Error('mcp-manager: this composition has no profile context')
 
-  /** Read the profile patch text, or an empty entry list. */
-  async function readText() {
+  async function readPatch() {
     try {
-      return await readFile(profile.patchPath, 'utf8')
+      if (!(await lstat(profile.patchPath)).isFile()) throw new Error('MCP management requires a regular profile patch file')
+      return await readFile(profile.patchPath)
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
-      return '[]\n'
+      return undefined
     }
   }
 
-  /** Persist the document and wait for the Loader to settle, restoring on failure. */
-  async function persist(before, document, requiredIds) {
-    const text = serializePatch(document)
-    const { readProfilePatches, reconcileProfilePatches } = await appBoot(profile.installAnchor)
-    await writeFileAtomic(profile.patchPath, text, { mode: 0o600 })
-    try {
-      // Read the patch back through dsh's own loader dialect instead of
-      // re-parsing `text` here: `entryListSchema` turns `!!js` into
-      // `{ __jsExpr }`, while a plain `toJS()` would hand the Loader a literal
-      // string and silently flip every expression row for the rest of the
-      // session. Everything after the write stays inside the rollback guard.
-      const patches = readProfilePatches(BIN, profile)
-      await reconcileProfilePatches(ctx.root, patches, BIN, requiredIds)
-    } catch (error) {
-      await writeFileAtomic(profile.patchPath, before, { mode: 0o600 })
+  function flatten(rows) {
+    return rows.flatMap((row) => row.group && Array.isArray(row.config) ? [row, ...flatten(row.config)] : [row])
+  }
+
+  async function exclusive(change, removedId) {
+    const run = () => withFileLock(join(profile.dir, 'package.json'), async () => {
+      const before = await readPatch()
+      const document = parsePatch(before?.toString() ?? '')
+      const { loadProfileDirectory, readProfilePatches, composeEntries, reconcileProfilePatches } = await appBoot(profile.installAnchor)
+      const loaded = loadProfileDirectory(BIN, profile.dir, profile.installAnchor, { userLayer: false })
+      const patchesFor = (text) => readProfilePatches(BIN, profile, { ...loaded, patches: parsePatch(text, true).toJS() })
+      const previousPatches = patchesFor(before?.toString() ?? '')
+      const previousRows = flatten(composeEntries([previousPatches]))
+      const verify = change(document, previousRows)
+      const text = serializePatch(document)
+      const patches = patchesFor(text)
+      const requiredIds = verify(flatten(composeEntries([patches])))
+      if (!isDeepStrictEqual(await readPatch(), before)) throw new Error('Profile patch changed during the operation; retry after refreshing')
+      await writeFileAtomic(profile.patchPath, text, { mode: 0o600 })
       try {
-        await reconcileProfilePatches(ctx.root, readProfilePatches(BIN, profile), BIN)
-      } catch {
-        // The composition may already be unusable; the file is restored either way.
+        await reconcileProfilePatches(ctx.root, patches, BIN, requiredIds)
+        const mounted = [...ctx.root.loader.entries()]
+        for (const id of requiredIds) {
+          const matches = mounted.filter((entry) => entry.options.id === id)
+          if (matches.length !== 1 || matches[0].disabled) throw new Error(`MCP row "${id}" did not load after the profile write`)
+        }
+        if (removedId !== undefined && mounted.some((entry) => entry.options.id === removedId)) {
+          throw new Error(`MCP row "${removedId}" remains loaded after removal`)
+        }
+      } catch (error) {
+        try {
+          if (!isDeepStrictEqual(await readPatch(), Buffer.from(text))) throw new Error('profile patch changed after the write')
+          if (before === undefined) await unlink(profile.patchPath)
+          else await writeFileAtomic(profile.patchPath, before, { mode: 0o600 })
+        } catch (rollback) {
+          throw new Error(`${error.message}; restoring the profile file failed: ${rollback.message}`, { cause: error })
+        }
+        try {
+          await reconcileProfilePatches(ctx.root, previousPatches, BIN)
+        } catch (rollback) {
+          throw new Error(`${error.message}; restoring the running profile failed: ${rollback.message}`, { cause: error })
+        }
+        throw error
       }
-      throw error
-    }
-  }
-
-  /** Run one edit under the profile lock and the HMR queue. */
-  async function exclusive(operation) {
-    const run = async () => {
-      await withFileLock(join(profile.dir, 'package.json'), async () => {
-        const before = await readText()
-        const document = parsePatch(before)
-        const requiredIds = operation(document)
-        await persist(before, document, requiredIds)
-      })
-    }
+    })
     const hmr = ctx.get('hmr')
     await (hmr === undefined ? run() : hmr.runExclusive(run))
   }
 
   return {
-    /** Append one plugin row to the profile patch. */
-    insert(row) {
-      return exclusive((document) => {
-        insertRow(document, row)
-        return [row.id]
-      })
+    assertSafeConfigEdit() {
+      try {
+        if (!lstatSync(profile.patchPath).isFile()) throw new Error('MCP management requires a regular profile patch file')
+        const document = parsePatch(readFileSync(profile.patchPath, 'utf8'))
+        if (hasLiteralExpressionMap(document)) {
+          throw new Error('This DSH configuration editor would rewrite a literal __jsExpr map. Edit the profile patch directly to preserve it.')
+        }
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error
+      }
+    },
+    async removableRows(rows) {
+      try {
+        const document = parsePatch((await readPatch())?.toString() ?? '')
+        return new Set(rows.filter((row) => hasInsertedRow(document, row)).map((row) => row.id))
+      } catch {
+        return new Set()
+      }
     },
     /** Append a whole batch, checking names again after entering the lock. */
     insertMany(rows) {
-      return exclusive((document) => {
+      return exclusive((document, previousRows) => {
         const names = new Set()
-        for (const entry of ctx.loader.entries()) {
-          if (entry.options.name === rows[0]?.name) names.add(entry.options.config?.serverName)
+        for (const row of [...previousRows, ...[...ctx.loader.entries()].map((entry) => entry.options)]) {
+          if (row.name === rows[0]?.name) names.add(row.config?.serverName)
         }
-        // Include rows written by another process that this Loader has not seen yet.
-        visit(document, {
-          Map(_key, node) {
-            if (node.get('name') !== rows[0]?.name) return
-            const config = node.get('config', true)
-            if (isMap(config)) names.add(config.get('serverName'))
-          },
-        })
         for (const row of rows) {
           const name = row.config.serverName
           if (names.has(name)) {
@@ -151,15 +167,29 @@ function createProfilePatchWriter(ctx) {
           names.add(name)
         }
         for (const row of rows) insertRow(document, row)
-        return rows.map((row) => row.id)
+        return (effective) => rows.map((row) => {
+          const matches = effective.filter((item) => item.id === row.id)
+          if (matches.length !== 1 || matches[0].name !== row.name || matches[0].disabled ||
+            !isDeepStrictEqual(matches[0].config, row.config)) {
+            throw new Error(`MCP server "${row.config.serverName}" is overridden by another configuration layer`)
+          }
+          return row.id
+        })
       })
     },
     /** Remove one plugin row from the profile patch. */
     remove(row) {
-      return exclusive((document) => {
+      return exclusive((document, previousRows) => {
+        const matches = previousRows.filter((item) => item.id === row.id)
+        if (matches.length !== 1 || matches[0].name !== row.name || !isDeepStrictEqual(matches[0].config, row.config)) {
+          throw new Error(`MCP row "${row.id}" changed or is not uniquely owned by this profile`)
+        }
         removeRow(document, row)
-        return []
-      })
+        return (effective) => {
+          if (effective.some((item) => item.id === row.id)) throw new Error(`MCP row "${row.id}" still exists in another layer`)
+          return []
+        }
+      }, row.id)
     },
   }
 }

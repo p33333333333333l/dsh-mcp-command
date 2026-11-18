@@ -21,9 +21,9 @@ const JS_TAG = {
  * @param {string} text File contents; an empty string reads as an empty list.
  * @returns {import('yaml').Document} Document that keeps comments and tags.
  */
-function parsePatch(text) {
+function parsePatch(text, decodeExpressions = false) {
   const source = text.trim() === '' ? '[]\n' : text
-  const document = parseDocument(source, { customTags: [JS_TAG] })
+  const document = parseDocument(source, { customTags: [decodeExpressions ? { ...JS_TAG, resolve: (value) => ({ __jsExpr: value }) } : JS_TAG] })
   if (document.errors[0] !== undefined) throw document.errors[0]
   if (document.contents === null) document.contents = document.createNode([])
   if (!isSeq(document.contents)) throw new Error('mcp-manager: the profile patch must be a YAML sequence')
@@ -43,10 +43,10 @@ function parsePatch(text) {
  * @param {import('yaml').Document} document Parsed patch.
  * @returns {import('yaml').YAMLSeq[]} The insert sequences, possibly empty.
  */
-function insertSequences(document) {
+function insertSequences(document, rootOnly = false) {
   const lists = []
   for (const item of document.contents.items) {
-    if (!isMap(item)) continue
+    if (!isMap(item) || (rootOnly && item.has('id'))) continue
     const insert = item.get('insert', true)
     if (isSeq(insert)) lists.push(insert)
   }
@@ -60,8 +60,7 @@ function insertSequences(document) {
  * @param {import('yaml').Document} document Parsed patch.
  */
 function insertSequence(document) {
-  const lists = insertSequences(document)
-  return lists[lists.length - 1]
+  return insertSequences(document, true).at(-1)
 }
 
 /**
@@ -80,7 +79,17 @@ function insertRow(document, row) {
     document.contents.items.push(document.createNode({ insert: [] }))
     list = insertSequence(document)
   }
-  list.items.push(document.createNode(row))
+  const node = document.createNode(row)
+  visit(node, {
+    Map(_key, map) {
+      const marker = map.items[0]
+      if (map.items.length !== 1 || marker.key?.value !== '__jsExpr' || typeof marker.value?.value !== 'string') return
+      const expression = new Scalar(marker.value.value)
+      expression.tag = JS_TAG.tag
+      return expression
+    },
+  })
+  list.items.push(node)
   list.flow = false
   return document
 }
@@ -101,26 +110,38 @@ function insertRow(document, row) {
 function removeRow(document, row) {
   // Search every insert block: the target may live in an earlier block than the
   // one new rows are appended to, and it is just as real to the Loader there.
-  let list
-  for (const candidate of insertSequences(document)) {
-    if (!candidate.items.some((item) => isMap(item) && item.get('id') === row.id)) continue
-    list = candidate
-    break
-  }
+  const matches = (item) => isMap(item) && item.get('id') === row.id &&
+    (row.name === undefined || item.get('name') === row.name)
+  const lists = insertSequences(document).flatMap((list) => list.items.filter(matches).map(() => list))
+  const list = lists.length === 1 ? lists[0] : undefined
   if (list === undefined) {
     throw new Error(`mcp-manager: row "${row.id}" is not an inserted profile row and cannot be removed here`)
   }
-  list.items.splice(list.items.findIndex((item) => isMap(item) && item.get('id') === row.id), 1)
+  list.items.splice(list.items.findIndex(matches), 1)
   if (list.items.length === 0) {
     // Drop the holder this row came from, and only that one: an unrelated
     // insert block (even an empty one) belongs to the user, not to this edit.
     const holder = document.contents.items.findIndex((item) => isMap(item) && item.get('insert', true) === list)
-    if (holder >= 0) document.contents.items.splice(holder, 1)
+    if (holder >= 0) {
+      const block = document.contents.items[holder]
+      if (block.items.length === 1 || (block.items.length === 2 && block.has('id'))) document.contents.items.splice(holder, 1)
+    }
   }
   for (let at = document.contents.items.length - 1; at >= 0; at -= 1) {
     if (isOverrideOf(document.contents.items[at], row)) document.contents.items.splice(at, 1)
   }
   return document
+}
+
+/** A unique insertion that this editor can remove without touching other rows. */
+function hasInsertedRow(document, row) {
+  let count = 0
+  for (const list of insertSequences(document)) {
+    for (const item of list.items) {
+      if (isMap(item) && item.get('id') === row.id && item.get('name') === row.name) count++
+    }
+  }
+  return count === 1
 }
 
 /**
@@ -136,23 +157,23 @@ function isOverrideOf(item, row) {
   return item.get('name') === row.name
 }
 
-/**
- * Serialize a patch document, writing `{ __jsExpr }` markers back as `!!js`
- * scalars so the Loader evaluates them at activation.
- * @param {import('yaml').Document} document Parsed patch.
- * @returns {string} YAML text.
- */
-function serializePatch(document) {
+/** The host ConfigEditor would reinterpret these literal maps as tagged expressions. */
+function hasLiteralExpressionMap(document) {
+  let found = false
   visit(document, {
     Map(_key, node) {
-      const key = node.items[0]?.key?.value
-      if (node.items.length !== 1 || key !== '__jsExpr') return
-      const expression = new Scalar(node.items[0].value?.value)
-      expression.tag = 'tag:yaml.org,2002:js'
-      return expression
+      if (node.items.length === 1 && typeof node.get('__jsExpr') === 'string') {
+        found = true
+        return visit.BREAK
+      }
     },
   })
+  return found
+}
+
+/** Serialize without reinterpreting data in unrelated rows. */
+function serializePatch(document) {
   return String(document)
 }
 
-export { parsePatch, insertSequence, insertSequences, insertRow, removeRow, serializePatch, JS_TAG }
+export { hasInsertedRow, hasLiteralExpressionMap, parsePatch, insertSequence, insertSequences, insertRow, removeRow, serializePatch, JS_TAG }

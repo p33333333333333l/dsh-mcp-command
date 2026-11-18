@@ -18,7 +18,7 @@ window.__ModuleLoader__.load({
     // stacking context clip it and let the sidebar paint over it.
     const { createPortal } = require('react-dom')
     const h = React.createElement
-    const { useState, useEffect, useRef, useCallback, useMemo } = React
+    const { useState, useEffect, useRef, useCallback } = React
 
     /** Dictionary namespace owned by this plugin. */
     const NS = 'mcpManager'
@@ -35,7 +35,7 @@ window.__ModuleLoader__.load({
       'import.file': '选择 JSON 文件',
       'import.hint': '粘贴 mcpServers 配置，或选择 JSON 文件。重名服务器不会被覆盖。',
       'import.busy': '处理中…',
-      'import.done': '已导入服务器：',
+      'import.done': '已保存服务器配置：',
       'import.tooLarge': '配置不能超过 1 MiB。',
       'import.readFailed': '无法读取文件。',
       'import.error.invalid-json': '无法解析 JSON。请检查粘贴或选择的内容是否是完整、有效的 JSON，再重试。',
@@ -49,7 +49,7 @@ window.__ModuleLoader__.load({
       'panel.retry': '重试',
       'panel.readOnly': '当前插件以只读模式运行（manage: false），不能在这里修改配置。',
       'row.tools': '工具',
-      'row.phase.active': '运行中',
+      'row.phase.active': '插件已加载',
       'row.phase.failed': '加载失败',
       'row.phase.pending': '等待中',
       'row.phase.other': '未运行',
@@ -62,6 +62,7 @@ window.__ModuleLoader__.load({
       'form.addTitle': '添加 MCP 服务器',
       'form.editTitle': '编辑 MCP 服务器',
       'form.name': '服务器名',
+      'form.nameFixed': '创建后不能修改服务器名称。',
       'form.nameHint': '字母、数字、下划线或连字符，最多 32 个字符。',
       'form.transport': '连接方式',
       'form.stdio': '本地进程 (stdio)',
@@ -91,7 +92,7 @@ window.__ModuleLoader__.load({
       'import.file': 'Choose JSON file',
       'import.hint': 'Paste mcpServers JSON or choose a file. Existing servers are never overwritten.',
       'import.busy': 'Working…',
-      'import.done': 'Servers imported: ',
+      'import.done': 'Server configurations saved: ',
       'import.tooLarge': 'Configuration must be 1 MiB or smaller.',
       'import.readFailed': 'Could not read the file.',
       'import.error.invalid-json': 'Could not parse the JSON. Check that the pasted content or file contains complete, valid JSON, then try again.',
@@ -105,7 +106,7 @@ window.__ModuleLoader__.load({
       'panel.retry': 'Retry',
       'panel.readOnly': 'This plugin runs read-only (manage: false), so the configuration cannot be changed here.',
       'row.tools': 'tools',
-      'row.phase.active': 'Running',
+      'row.phase.active': 'Plugin loaded',
       'row.phase.failed': 'Failed to load',
       'row.phase.pending': 'Pending',
       'row.phase.other': 'Not running',
@@ -118,6 +119,7 @@ window.__ModuleLoader__.load({
       'form.addTitle': 'Add an MCP server',
       'form.editTitle': 'Edit MCP server',
       'form.name': 'Server name',
+      'form.nameFixed': 'Server names are fixed after creation.',
       'form.nameHint': 'Letters, digits, underscores or hyphens; up to 32 characters.',
       'form.transport': 'Connection',
       'form.stdio': 'Local process (stdio)',
@@ -292,7 +294,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
      * values survive an edit instead of being saved as display text.
      */
     function parsePairs(text) {
-      const out = {}
+      const out = Object.create(null)
       let previousKey
       for (const line of String(text ?? '').split('\n')) {
         // A tab marks a continuation, including lines with their own "=" or comments.
@@ -325,6 +327,8 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
         return { serverName: '', transport: 'stdio', command: '', argsText: '', cwd: '', envText: '', url: '', headersText: '', failOnStartupError: false }
       }
       return {
+        rowId: server.rowId,
+        revision: server.revision,
         serverName: server.serverName ?? '',
         transport: server.transport === 'stdio' ? 'stdio' : 'streamable-http',
         command: server.command ?? '',
@@ -347,7 +351,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
     }
 
     /** One server row with its edit/remove actions. */
-    function ServerCard({ server, t, readOnly, removing, onEdit, onRemove }) {
+    function ServerCard({ server, t, readOnly, busy, onEdit, onRemove }) {
       const [confirming, setConfirming] = useState(false)
       const phase = server.enabled ? String(server.phase ?? '') : 'disabled'
       const status = ['active', 'failed', 'pending'].includes(phase) ? phase : 'idle'
@@ -359,15 +363,15 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
             server.serverName),
           h('span', { className: 'mcp-tag' }, server.transport === 'stdio' ? 'stdio' : 'http'),
           h('span', { className: 'mcp-tag' }, `${server.tools.length} ${t('row.tools')}`),
-          !readOnly && h('span', { className: 'mcp-actions' },
+          !readOnly && (server.editable || server.removable) && h('span', { className: 'mcp-actions' },
             confirming
               ? h(React.Fragment, null,
                 h('span', { className: 'mcp-note', style: { margin: 0 } }, t('row.confirmRemove')),
-                h('button', { type: 'button', className: 'mcp-btn mcp-btn-danger', disabled: removing, onClick: () => onRemove(server) }, t('row.yes')),
-                h('button', { type: 'button', className: 'mcp-btn', onClick: () => setConfirming(false) }, t('row.no')))
+                h('button', { type: 'button', className: 'mcp-btn mcp-btn-danger', disabled: busy, onClick: () => onRemove(server) }, t('row.yes')),
+                h('button', { type: 'button', className: 'mcp-btn', disabled: busy, onClick: () => setConfirming(false) }, t('row.no')))
               : h(React.Fragment, null,
-                h('button', { type: 'button', className: 'mcp-btn', onClick: () => onEdit(server) }, t('row.edit')),
-                h('button', { type: 'button', className: 'mcp-btn mcp-btn-danger', onClick: () => setConfirming(true) }, t('row.remove')))),
+                h('button', { type: 'button', className: 'mcp-btn', disabled: busy, onClick: () => onEdit(server) }, t('row.edit')),
+                h('button', { type: 'button', className: 'mcp-btn mcp-btn-danger', disabled: busy, onClick: () => setConfirming(true) }, t('row.remove')))),
         ),
         h('p', { className: 'mcp-line' }, transportLine(server)),
         server.tools.length > 0 && h('div', { className: 'mcp-tools' },
@@ -389,16 +393,20 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
           return
         }
         setError('')
+        const sameTransport = editing && draft.transport === initial.transport
+        const changed = (key) => !sameTransport || draft[key] !== initial[key]
         onSubmit({
+          rowId: draft.rowId,
+          revision: draft.revision,
           serverName: name,
           transport: draft.transport,
-          command: draft.command,
-          args: draft.argsText.split('\n').map((line) => line.trim()).filter((line) => line !== ''),
-          cwd: draft.cwd,
-          env: parsePairs(draft.envText),
-          url: draft.url,
-          headers: parsePairs(draft.headersText),
-          failOnStartupError: draft.failOnStartupError,
+          command: changed('command') ? draft.command : undefined,
+          argsText: changed('argsText') ? draft.argsText : undefined,
+          cwd: changed('cwd') ? draft.cwd : undefined,
+          env: changed('envText') ? parsePairs(draft.envText) : undefined,
+          url: changed('url') ? draft.url : undefined,
+          headers: changed('headersText') ? parsePairs(draft.headersText) : undefined,
+          failOnStartupError: !editing || draft.failOnStartupError !== initial.failOnStartupError ? draft.failOnStartupError : undefined,
         })
       }
       return h('form', { className: 'mcp-form mcp-server-form', onSubmit: submit },
@@ -406,13 +414,13 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
           h('span', { className: 'mcp-name' }, editing ? t('form.editTitle') : t('form.addTitle'))),
         h('label', { className: 'mcp-field' },
           h('span', null, t('form.name')),
-          h('input', { type: 'text', value: draft.serverName, disabled: saving, onChange: set('serverName'), autoFocus: true }),
-          h('small', null, t('form.nameHint'))),
+          h('input', { type: 'text', value: draft.serverName, disabled: saving || editing, onChange: set('serverName'), autoFocus: true }),
+          h('small', null, t(editing ? 'form.nameFixed' : 'form.nameHint'))),
         h('div', { className: 'mcp-field' },
           h('span', null, t('form.transport')),
           h('div', { className: 'mcp-seg' },
-            h('button', { type: 'button', 'aria-pressed': draft.transport === 'stdio', onClick: () => setDraft((c) => ({ ...c, transport: 'stdio' })) }, t('form.stdio')),
-            h('button', { type: 'button', 'aria-pressed': draft.transport !== 'stdio', onClick: () => setDraft((c) => ({ ...c, transport: 'streamable-http' })) }, t('form.http')))),
+            h('button', { type: 'button', disabled: saving, 'aria-pressed': draft.transport === 'stdio', onClick: () => setDraft((c) => ({ ...c, transport: 'stdio' })) }, t('form.stdio')),
+            h('button', { type: 'button', disabled: saving, 'aria-pressed': draft.transport !== 'stdio', onClick: () => setDraft((c) => ({ ...c, transport: 'streamable-http' })) }, t('form.http')))),
         draft.transport === 'stdio'
           ? h(React.Fragment, null,
             h('label', { className: 'mcp-field' }, h('span', null, t('form.command')), h('input', { type: 'text', value: draft.command, disabled: saving, onChange: set('command') })),
@@ -495,17 +503,31 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
     }
 
     /** The floating panel: list, add, edit, remove and import. */
-    function McpPanel({ t, remote, onClose }) {
+    function McpPanel({ t, remote, open }) {
       const [state, setState] = useState({ status: 'loading', manage: true, servers: [], error: '' })
       const [editing, setEditing] = useState(null)
       const [importing, setImporting] = useState(false)
       const [notice, setNotice] = useState('')
       const [saving, setSaving] = useState(false)
-      const [removing, setRemoving] = useState('')
       const [actionError, setActionError] = useState('')
       const mounted = useRef(true)
+      const dialog = useRef(null)
 
-      useEffect(() => () => { mounted.current = false }, [])
+      useEffect(() => {
+        mounted.current = true
+        const previous = document.activeElement
+        dialog.current?.focus()
+        return () => {
+          mounted.current = false
+          if (previous?.isConnected) previous.focus()
+        }
+      }, [])
+
+      const onClose = useCallback(() => { if (!open.busy) open.set(false) }, [open])
+      const setBusy = (busy) => {
+        open.busy = busy
+        setSaving(busy)
+      }
 
       const load = useCallback(async () => {
         setState((current) => ({ ...current, status: 'loading', error: '' }))
@@ -522,23 +544,36 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
 
       useEffect(() => {
         const onKey = (event) => {
+          if (event.key === 'Tab') {
+            const controls = [...(dialog.current?.querySelectorAll('button:enabled, input:enabled:not([hidden]):not([type=hidden]), textarea:enabled') ?? [])]
+            const first = controls[0]
+            const last = controls.at(-1)
+            const active = document.activeElement
+            if (!controls.includes(active) || active === (event.shiftKey ? first : last)) {
+              event.preventDefault()
+              const target = (event.shiftKey ? last : first) ?? dialog.current
+              target?.focus()
+            }
+            return
+          }
           if (event.key !== 'Escape') return
           event.stopPropagation()
-          if (saving) return
+          if (open.busy) return
           if (importing) setImporting(false)
           else if (editing !== null) setEditing(null)
           else onClose()
         }
         document.addEventListener('keydown', onKey, true)
         return () => document.removeEventListener('keydown', onKey, true)
-      }, [editing, importing, saving, onClose])
+      }, [editing, importing, open, onClose])
 
       const submit = async (server) => {
-        setSaving(true)
+        if (open.busy) return
+        setBusy(true)
         setActionError('')
         const result = await remote.save(server)
+        setBusy(false)
         if (!mounted.current) return
-        setSaving(false)
         if (!result.ok) {
           setActionError(result.message)
           return
@@ -548,11 +583,12 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       }
 
       const remove = async (server) => {
-        setRemoving(server.serverName)
+        if (open.busy) return
+        setBusy(true)
         setActionError('')
-        const result = await remote.remove(server.serverName)
+        const result = await remote.remove(server)
+        setBusy(false)
         if (!mounted.current) return
-        setRemoving('')
         if (!result.ok) {
           setActionError(result.message)
           return
@@ -561,19 +597,19 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       }
 
       const readOnly = state.status === 'ready' && !state.manage
-      const rows = useMemo(() => state.servers.map((server) => h(ServerCard, {
+      const rows = state.servers.map((server) => h(ServerCard, {
         key: server.rowId,
         server,
         t,
         readOnly,
-        removing: removing === server.serverName,
+        busy: saving,
         onEdit: (value) => setEditing(draftOf(value)),
         onRemove: (value) => { void remove(value) },
-      })), [state.servers, readOnly, removing, t])
+      }))
 
-      return h('div', { className: 'mcp-backdrop', role: 'presentation', onMouseDown: (event) => { if (!saving && event.target === event.currentTarget) onClose() } },
+      return h('div', { className: 'mcp-backdrop', role: 'presentation', onMouseDown: (event) => { if (!open.busy && event.target === event.currentTarget) onClose() } },
         h(StyleSheet),
-        h('div', { className: 'mcp-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('panel.aria') },
+        h('div', { className: 'mcp-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('panel.aria'), ref: dialog, tabIndex: -1 },
           h('div', { className: 'mcp-head' },
             h('div', null,
               h('h2', null, t('panel.title'))),
@@ -584,7 +620,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
             actionError !== '' && h('p', { className: 'mcp-note mcp-note-error' }, actionError),
             notice !== '' && h('p', { className: 'mcp-note', role: 'status' }, notice),
             importing && h(ImportForm, {
-              t, remote, onBusy: setSaving,
+              t, remote, onBusy: setBusy,
               onCancel: () => setImporting(false),
               onImported: async (count) => {
                 setNotice(`${t('import.done')}${count}`)
@@ -606,8 +642,8 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
               onCancel: () => setEditing(null),
             }),
             state.status === 'ready' && editing === null && !importing && !readOnly && h('div', { className: 'mcp-row', style: { marginTop: 12 } },
-              h('button', { type: 'button', className: 'mcp-btn mcp-btn-primary', onClick: () => { setNotice(''); setEditing(draftOf(undefined)) } }, t('panel.add')),
-              h('button', { type: 'button', className: 'mcp-btn', disabled: removing !== '', onClick: () => { setNotice(''); setActionError(''); setImporting(true) } }, t('import.title')))),
+              h('button', { type: 'button', className: 'mcp-btn mcp-btn-primary', disabled: saving, onClick: () => { setNotice(''); setActionError(''); setEditing(draftOf(undefined)) } }, t('panel.add')),
+              h('button', { type: 'button', className: 'mcp-btn', disabled: saving, onClick: () => { setNotice(''); setActionError(''); setImporting(true) } }, t('import.title')))),
         ))
     }
 
@@ -640,14 +676,20 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       } catch {
         return { ok: false, message: `HTTP ${response.status}: ${text.slice(0, 200)}` }
       }
-      if (!response.ok || payload.error !== undefined) {
+      if (!response.ok || payload?.error !== undefined) {
         return {
           ok: false,
-          message: String(payload.error?.message ?? `HTTP ${response.status}`),
-          importIssue: payload.error?.importIssue,
+          message: String(payload?.error?.message ?? `HTTP ${response.status}`),
+          importIssue: payload?.error?.importIssue,
         }
       }
-      return { ok: true, value: payload.value }
+      const value = payload?.value
+      const valid = value != null && typeof value === 'object' && (
+        body.action === 'list' ? typeof value.manage === 'boolean' && Array.isArray(value.servers) :
+          body.action === 'save' ? typeof value.rowId === 'string' && typeof value.created === 'boolean' :
+            body.action === 'remove' ? typeof value.removed === 'string' : Number.isSafeInteger(value.imported)
+      )
+      return valid ? { ok: true, value } : { ok: false, message: `HTTP ${response.status}: invalid MCP manager response` }
     }
 
     function importErrorMessage(t, result) {
@@ -662,7 +704,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
     const api = {
       list: () => call({ action: 'list' }),
       save: (server) => call({ action: 'save', server }),
-      remove: (serverName) => call({ action: 'remove', serverName }),
+      remove: ({ serverName, rowId, revision }) => call({ action: 'remove', serverName, rowId, revision }),
       importServers: (text) => call({ action: 'import', text }),
     }
 
@@ -678,7 +720,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
       }, [open])
       if (!visible) return false
       return createPortal(
-        h(McpPanel, { t, remote: api, onClose: () => open.set(false) }),
+        h(McpPanel, { t, remote: api, open }),
         document.body,
       )
     }
@@ -694,6 +736,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
           const listeners = new Set()
           let value = false
           panel = {
+            busy: false,
             get: () => value,
             set: (next) => {
               if (value === next) return
@@ -701,6 +744,7 @@ body:not([data-ds-dark-theme]) .mcp-seg button[aria-pressed=true]{background:var
               for (const listener of listeners) listener()
             },
             toggle: () => {
+              if (panel.busy) return
               value = !value
               for (const listener of listeners) listener()
             },

@@ -13,6 +13,7 @@
  *
  * @module dsh-mcp-servers
  */
+import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { parseDocument } from 'yaml'
 import { createProfilePatchWriter } from './profile-patch.js'
@@ -34,8 +35,12 @@ const ROUTE = '/api/mcp.manager'
 /** `serverName` contract from `@deepseek-ai/dsh-mcp-client`. */
 const SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/
 
-/** Row fields carried over unchanged when the panel rewrites an existing row. */
-const PRESERVED = ['toolCallTimeoutMs', 'maxInstructionBytes', 'failOnStartupError', 'reconnect']
+function revisionOf(config) {
+  return createHash('sha256').update(JSON.stringify(config)).digest('hex')
+}
+
+/** Fields replaced by the panel when saving transport settings. */
+const TRANSPORT_FIELDS = ['command', 'args', 'cwd', 'env', 'url', 'headers']
 
 /** Prefix the panel shows in front of a `!!js` expression. */
 const JS_PREFIX = '!!js '
@@ -65,7 +70,7 @@ function restoreValue(text) {
 
 /** Trim a dictionary, dropping blank keys and values. */
 function cleanDict(input, previous = {}) {
-  const out = {}
+  const out = Object.create(null)
   if (input !== null && typeof input === 'object') {
     for (const [key, value] of Object.entries(input)) {
       const name = String(key).trim()
@@ -85,16 +90,14 @@ function cleanDict(input, previous = {}) {
       if (name !== '' && !blank) out[name] = kept
     }
   }
-  return out
+  return { ...out }
 }
 
 /** Panel-visible copy of one dictionary, with `!!js` expressions rendered as text. */
 function viewDict(input) {
-  const out = {}
-  if (input !== null && typeof input === 'object') {
-    for (const [key, value] of Object.entries(input)) out[key] = renderValue(value)
-  }
-  return out
+  return input !== null && typeof input === 'object'
+    ? Object.fromEntries(Object.entries(input).map(([key, value]) => [key, renderValue(value)]))
+    : {}
 }
 
 /** Trim a string list. */
@@ -182,7 +185,7 @@ class McpManager {
   /**
    * @param {import('@deepseek-ai/cordis').Context} ctx Owning plugin context.
    * @param {{ manage?: boolean }} [config] Resolved plugin config.
-   * @param {{ insert: (row: object) => Promise<void>, insertMany: (rows: object[]) => Promise<void>, remove: (row: object) => Promise<void> }} [patches] Profile patch writer.
+   * @param {{ insertMany: (rows: object[]) => Promise<void>, remove: (row: object) => Promise<void> }} [patches] Profile patch writer.
    */
   constructor(ctx, config = {}, patches) {
     this.ctx = ctx
@@ -191,14 +194,22 @@ class McpManager {
   }
 
   /** Every configured MCP server row, with the tool names the model sees. */
-  list() {
-    const servers = []
+  async list() {
+    const entries = [...this.ctx.loader.entries()].filter((entry) =>
+      entry.options.name === MCP_CLIENT && typeof entry.options.config?.serverName === 'string' &&
+      entry.options.config.serverName !== '')
+    const counts = new Map()
     for (const entry of this.ctx.loader.entries()) {
-      if (entry.options.name !== MCP_CLIENT) continue
-      const config = entry.options.config ?? {}
-      if (typeof config.serverName !== 'string' || config.serverName === '') continue
-      servers.push(this.view(entry, config))
+      const id = entry.options.id
+      counts.set(id, (counts.get(id) ?? 0) + 1)
     }
+    const editable = this.manage ? new Set(this.ctx.configEditor?.entries?.() ?? []) : new Set()
+    const removable = this.manage ? await this.patchWriter?.removableRows?.(entries.map((entry) => entry.options)) : undefined
+    const servers = entries.map((entry) => ({
+      ...this.view(entry, entry.options.config),
+      editable: editable.has(entry) && phaseOf(entry) === 'active',
+      removable: counts.get(entry.options.id) === 1 && removable?.has(entry.options.id) === true,
+    }))
     servers.sort((left, right) => left.serverName.localeCompare(right.serverName))
     return { manage: this.manage, servers }
   }
@@ -210,21 +221,36 @@ class McpManager {
    */
   async save(server) {
     this.requireManage()
-    const draft = this.validate(server)
-    const existing = this.rowNamed(draft.serverName)
+    const draft = this.validate(server, undefined)
+    const existing = this.rowNamed(draft.serverName, draft.rowId)
+    if (draft.rowId === undefined && existing !== undefined) {
+      throw new McpError('invalid', `MCP server "${draft.serverName}" already exists`)
+    }
+    if (draft.rowId !== undefined && existing?.rowId !== draft.rowId) {
+      throw new McpError('not-found', `MCP server "${draft.serverName}" changed or no longer exists; reopen the panel`)
+    }
     const previous = existing === undefined ? {} : existing.entry.options.config ?? {}
-    const config = this.configFor(draft, previous)
-
     if (existing !== undefined) {
+      const next = (current) => {
+        if (draft.revision !== undefined && revisionOf(current) !== draft.revision) {
+          throw new McpError('not-found', 'MCP server configuration changed; reopen the panel')
+        }
+        return this.configFor(this.validate(draft, current), current)
+      }
+      const config = next(previous)
       if (isDeepStrictEqual(previous, config)) {
         return { rowId: existing.rowId, created: false }
       }
-      await this.ctx.configEditor.edit(existing.entry, () => ({ ...config }))
+      await this.ctx.configEditor.edit(existing.entry, (current) => {
+        this.patchWriter?.assertSafeConfigEdit?.()
+        return next(current)
+      })
       return { rowId: existing.rowId, created: false }
     }
 
+    const config = this.configFor(this.validate(draft, {}), {})
     const rowId = this.freeRowId(`mcp-${draft.serverName}`)
-    await this.patches().insert({ id: rowId, name: MCP_CLIENT, config })
+    await this.patches().insertMany([{ id: rowId, name: MCP_CLIENT, config }])
     return { rowId, created: true }
   }
 
@@ -264,17 +290,24 @@ class McpManager {
   /**
    * Drop one server row.
    * @param {string} serverName Server namespace to remove.
+   * @param {string} [rowId] Row the panel originally displayed.
    * @returns {Promise<{ removed: string }>}
    */
-  async remove(serverName) {
+  async remove(serverName, rowId, revision) {
     this.requireManage()
     const name = String(serverName ?? '')
-    const existing = this.rowNamed(name)
-    if (existing === undefined) throw new McpError('not-found', `no MCP server named "${name}"`)
+    const existing = this.rowNamed(name, rowId)
+    if (existing === undefined || (rowId !== undefined && existing.rowId !== rowId)) {
+      throw new McpError('not-found', `MCP server "${name}" changed or no longer exists; reopen the panel`)
+    }
     // `name` lets the writer drop the matching top-level override too: editing an
     // inserted row appends one, and leaving it behind would resurrect the old
     // config when the same server name is added again.
-    await this.patches().remove({ id: existing.rowId, name: MCP_CLIENT })
+    const config = existing.entry.options.config
+    if (revision !== undefined && revisionOf(config) !== revision) {
+      throw new McpError('not-found', 'MCP server configuration changed; reopen the panel')
+    }
+    await this.patches().remove({ id: existing.rowId, name: MCP_CLIENT, config })
     return { removed: existing.rowId }
   }
 
@@ -283,13 +316,14 @@ class McpManager {
     const serverName = config.serverName
     return {
       rowId: entry.options.id,
+      revision: revisionOf(config),
       serverName,
       transport: config.transport === 'stdio' ? 'stdio' : 'streamable-http',
-      command: typeof config.command === 'string' ? config.command : '',
+      command: renderValue(config.command),
       args: Array.isArray(config.args) ? config.args.map(String) : [],
       env: viewDict(config.env),
-      cwd: typeof config.cwd === 'string' ? config.cwd : '',
-      url: typeof config.url === 'string' ? config.url : '',
+      cwd: renderValue(config.cwd),
+      url: renderValue(config.url),
       headers: viewDict(config.headers),
       failOnStartupError: config.failOnStartupError === true,
       enabled: entry.disabled !== true,
@@ -313,15 +347,18 @@ class McpManager {
   }
 
   /** Normalize the panel payload and reject what the Config schema would reject later. */
-  validate(input) {
+  validate(input, current) {
     const serverName = String(input?.serverName ?? '').trim()
     if (!SERVER_NAME.test(serverName)) {
       throw new McpError('invalid', 'server name must be 1-32 characters of A-Z a-z 0-9 _ -')
     }
-    const transport = input?.transport === 'stdio' ? 'stdio' : 'streamable-http'
+    const transport = input?.transport
+    if (transport !== 'stdio' && transport !== 'streamable-http') throw new McpError('invalid', 'unsupported MCP transport')
+    if (current === undefined) return { ...input, serverName, transport }
+    const previous = current.transport === transport ? current : {}
     if (transport === 'stdio') {
-      if (String(input?.command ?? '').trim() === '') throw new McpError('invalid', 'stdio transport needs a command')
-    } else if (String(input?.url ?? '').trim() === '') {
+      if (String(input?.command ?? renderValue(previous.command)).trim() === '') throw new McpError('invalid', 'stdio transport needs a command')
+    } else if (String(input?.url ?? renderValue(previous.url)).trim() === '') {
       throw new McpError('invalid', 'streamable-http transport needs a URL')
     }
     return { ...input, serverName, transport }
@@ -329,9 +366,9 @@ class McpManager {
 
   /** Panel payload plus preserved fields -> raw `mcp-client` config. */
   configFor(server, previous) {
-    const config = {}
-    for (const key of PRESERVED) {
-      if (previous[key] !== undefined) config[key] = previous[key]
+    const config = { ...previous }
+    if (previous.transport !== server.transport) {
+      for (const key of TRANSPORT_FIELDS) delete config[key]
     }
     // The checkbox is authoritative when the panel sends it: a new row has no
     // `previous`, so copying it only from there silently dropped the field.
@@ -339,28 +376,40 @@ class McpManager {
     config.serverName = server.serverName
     config.transport = server.transport
     if (server.transport === 'stdio') {
-      config.command = String(server.command).trim()
-      config.args = cleanList(server.args)
-      const cwd = String(server.cwd ?? '').trim()
-      if (cwd !== '') config.cwd = cwd
-      const env = cleanDict(server.env, previous.env)
-      if (Object.keys(env).length > 0) config.env = env
+      if (server.command !== undefined && server.command !== renderValue(config.command)) config.command = String(server.command).trim()
+      if (server.args !== undefined || server.argsText !== undefined) {
+        const args = typeof server.argsText === 'string'
+          ? server.argsText.split('\n').map((line) => line.trim())
+          : server.args
+        config.args = Array.isArray(previous.args) && previous.args.join('\n') === server.argsText
+          ? previous.args
+          : cleanList(args)
+      }
+      if (server.cwd !== undefined && server.cwd !== renderValue(config.cwd)) {
+        const cwd = String(server.cwd).trim()
+        if (cwd === '') delete config.cwd
+        else config.cwd = cwd
+      }
+      if (server.env !== undefined) config.env = cleanDict(server.env, previous.env)
     } else {
-      config.url = String(server.url).trim()
-      const headers = cleanDict(server.headers, previous.headers)
-      if (Object.keys(headers).length > 0) config.headers = headers
+      if (server.url !== undefined && server.url !== renderValue(config.url)) config.url = String(server.url).trim()
+      if (server.headers !== undefined) config.headers = cleanDict(server.headers, previous.headers)
     }
     return config
   }
 
   /** The row whose `serverName` matches, with its Loader entry. */
-  rowNamed(serverName) {
+  rowNamed(serverName, rowId) {
+    let match
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.name !== MCP_CLIENT) continue
       if (entry.options.config?.serverName !== serverName) continue
-      return { rowId: entry.options.id, entry }
+      if (rowId === undefined) return { rowId: entry.options.id, entry }
+      if (entry.options.id !== rowId) continue
+      if (match !== undefined) return undefined
+      match = { rowId, entry }
     }
-    return undefined
+    return match
   }
 
   /** A row id no other Loader entry uses. */
@@ -399,7 +448,7 @@ async function handle(manager, payload) {
     case 'save':
       return manager.save(body.server)
     case 'remove':
-      return manager.remove(body.serverName)
+      return manager.remove(body.serverName, body.rowId, body.revision)
     default:
       throw new McpError('invalid', `unknown action ${JSON.stringify(body.action)}`)
   }

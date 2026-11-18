@@ -366,3 +366,27 @@ test('blank dictionary entries are dropped', () => {
   )
   assert.deepEqual(config.env, { A: '1' })
 })
+
+test('adding a server uses a root insert and leaves unrelated YAML maps intact', () => {
+  const document = parsePatch(`- id: nested
+  insert:
+    - id: unrelated
+      name: other-plugin
+      config:
+        metadata: { __jsExpr: literal }
+`)
+  insertRow(document, { id: 'mcp-new', name: MCP_CLIENT, config: { serverName: 'new' } })
+  const [nested, root] = readBack(serializePatch(document))
+  assert.deepEqual(nested.insert[0].config.metadata, { __jsExpr: 'literal' })
+  assert.equal(nested.insert.length, 1)
+  assert.equal(root.id, undefined)
+  assert.equal(root.insert[0].id, 'mcp-new')
+})
+
+test('saving other options preserves the exact original argument list', () => {
+  const manager = new McpManager(CTX, {})
+  const args = [' first ', '', 'two\nlines']
+  const draft = { serverName: 'x', transport: 'stdio', command: 'node', argsText: args.join('\n') }
+  assert.deepEqual(manager.configFor(draft, { args }).args, args)
+  assert.deepEqual(manager.configFor({ ...draft, argsText: 'new' }, { args }).args, ['new'])
+})
